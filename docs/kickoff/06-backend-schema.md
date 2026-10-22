@@ -27,7 +27,8 @@ erDiagram
 **chunks** — `id INTEGER PK`, `source_id INTEGER FK→sources ON DELETE CASCADE`, `heading TEXT`,
 `text TEXT NOT NULL` (≤ 800 chars), `lang TEXT CHECK(lang IN ('ar','en','mixed'))`, `ord INTEGER`.
 - `chunks_fts` — FTS5 virtual table on `heading, text` (tokenizer `unicode61 remove_diacritics 2` for Arabic).
-- `chunks_vec` — `sqlite-vec` `vec0(embedding float[384])` (model `intfloat/multilingual-e5-small`, prefix `passage: `), rowid = `chunks.id`. Brain only; Mac reads the raw float blobs into memory.
+- `chunks_vec` — `sqlite-vec` `vec0(embedding float[384])` (model `intfloat/multilingual-e5-small`, prefix `passage: `), rowid = `chunks.id`. Brain only.
+- **chunk_vectors** — `chunk_id INTEGER PK FK→chunks`, `embedding BLOB NOT NULL` (384 × float32), written next to `chunks_vec` at build. The Mac loads only this table into memory.
 
 Excluded from indexing always: `Secrets/`, any file with `secret|password|token` in path, `.bak*`.
 
@@ -45,7 +46,7 @@ Excluded from indexing always: `Secrets/`, any file with `secret|password|token`
 
 ## live.sqlite (Mac → brain after call)
 **meetings** — `id TEXT PK` (UUID), `project_id TEXT`, `title TEXT`, `app TEXT` (zoom/teams/browser),
-`started_at INTEGER NOT NULL`, `ended_at INTEGER`, `audio_dir TEXT`, `summary_path TEXT`, `confidential INTEGER NOT NULL DEFAULT 0`,
+`started_at INTEGER NOT NULL`, `ended_at INTEGER`, `audio_dir TEXT`, `summary_path TEXT`, `confidential INTEGER NOT NULL DEFAULT 0`, `claude_allowed INTEGER NOT NULL DEFAULT 1` (forced to 0 when the owner marks a confidential meeting "local only"),
 `status TEXT CHECK(status IN ('live','queued','summarized','deleted'))`.
 
 **segments** — `id INTEGER PK`, `meeting_id TEXT FK ON DELETE CASCADE`, `channel TEXT CHECK(channel IN ('me','them'))`,

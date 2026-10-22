@@ -59,11 +59,12 @@ summary note in their vault in under 2 minutes.
 | Summary ready after call end | ≤ 2 min, used without edits in ≥ 7/10 calls | owner rating |
 
 ## Top-3 assumptions (each tested in < 2 weeks, SAR 0)
-1. **On-device STT on a MacBook Air M1 8 GB can stream Saudi Arabic with partials ≤ 500 ms while Zoom runs.**
+1. **On-device STT on a MacBook Air M1 8 GB can stream Saudi Arabic with partial lag p50 ≤ 700 ms while Zoom runs**
+   (≤ 500 ms is the stretch goal; if only chunked mode passes, mid-question cards are dropped — Plan B in 03-tdd).
    Test: T02 benchmark on the T02a corpus (5 real calls + 20 clips). If it fails: Plan B in 03-tdd.
 2. **≥ 40% of technical questions in the owner's calls are predictable from the vault before the call.**
    Test: task T06a — generate cards blind from the vault, then count matches against questions labelled in the 5 T02a calls.
-3. **A free fast-LLM tier (Groq) gives first token < 500 ms from KSA and enough daily quota for ~30 questions/call.**
+3. **A free fast-LLM tier (Groq) gives first token ≤ 600 ms from KSA and enough daily quota for ~30 questions/call.**
    Test: task T03 latency probe, 50 calls on each of 2 days from the Mac.
 
 ## Security / privacy posture (decided now)

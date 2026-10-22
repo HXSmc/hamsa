@@ -49,6 +49,8 @@ Smart defaults: brain address prefilled, project = last used, language = auto.
 3. **ReviewQuestionsView**: list of questions heard that had no card or got 👎. Per row:
    Accept AI draft / Edit / Discard. Accepted → card for next call.
 - Error: brain offline → "Summary queued, will run when mini PC is reachable".
+- Confidential + "local only" (`claude_allowed=0`): no upload, transcript stays on the Mac, notification says
+  "Summary skipped (confidential)".
 
 ## Screen list (file names)
 `MenuBarView`, `OnboardingView`, `PermissionHelpView`, `PrepareMeetingView`, `OverlayPanel`,

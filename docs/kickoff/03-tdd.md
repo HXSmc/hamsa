@@ -24,7 +24,7 @@ upgrades it in place.
 
 Extra speed tricks:
 - **Speculative start**: when the question detector fires on a partial with confidence ≥ 0.7, start T1+T2
-  immediately; cancel if the next partial changes the meaning (cosine < 0.85 to the one used).
+  immediately; cancel if the top-1 card or the top-3 chunks change on the next partial.
 - **Warm connection**: keep an HTTP/2 connection to the LLM open during the call (no TLS handshake per question).
 - **Prompt caching by shape**: system prompt + per-meeting context fixed, only question + chunks vary.
 - **Bilingual cards**: each card stores `answer_en` and `answer_ar_sa` (Saudi white dialect, English
@@ -39,7 +39,7 @@ Extra speed tricks:
 | Signing | Stable local code-signing identity (free Apple ID "Personal Team" or self-signed cert in Keychain) | TCC mic/audio grants reset on every rebuild with ad-hoc signing | ad-hoc `-` signing |
 | VAD | Silero VAD via FluidAudio (Apache-2.0) | CoreML, tiny, proven | WebRTC VAD: worse on Arabic |
 | Streaming STT | **Decided by T02.** Candidates: (a) WhisperKit large-v3-turbo in chunked windows (step 1–2 s, window 5 s; Whisper is NOT natively streaming, partials are re-decodes); (b) Apple `SpeechTranscriber` `ar-SA` if macOS 26 and the asset downloads (checked in T00); (c) Saudi fine-tune `oddadmix/whisper-large-v3-arabic-dialectal-v2` only via separate time-boxed task T02b (1 day CoreML conversion) | Arabic dialect quality and ANE speed both unknown on this Mac; measure, don't guess | Parakeet: no Arabic; cloud STT: not free + adds 200 ms+ |
-| Embeddings | **One model on both sides**: `intfloat/multilingual-e5-small` (384-d), CoreML on Mac, PyTorch/ONNX on brain; parity checked in T05b (cosine ≥ 0.999) **[VERIFY dialect → English-doc retrieval in T05]** | One model = no parity drift; ~120 MB fp16 | model2vec: no Swift port, weak cross-lingual; bge-m3: ~1.1 GB |
+| Embeddings | **One model on both sides**: `intfloat/multilingual-e5-small` (384-d), CoreML on Mac, PyTorch/ONNX on brain; parity checked in T05b (cosine ≥ 0.999) **[VERIFY dialect → English-doc retrieval in T05]** | One model = no parity drift; ~235 MB fp16 (measured in T05b) | model2vec: no Swift port, weak cross-lingual; bge-m3: ~1.1 GB |
 | Local index | Brain: SQLite + FTS5 (BM25) + `sqlite-vec`. Mac: system SQLite for FTS5 only; vectors loaded into memory as `[Float]`, brute-force dot product (≤ 20k vectors, target < 5 ms) | No static SQLite build on Mac; extension loading not needed | Qdrant/Chroma: a server for ~10k chunks is overkill |
 | Fast LLM (T2) | Groq free tier, model chosen in T03 from `openai/gpt-oss-120b`, `qwen/qwen3-32b`, `llama-3.3-70b-versatile` **[VERIFY limits + Arabic quality]**; fallback: Gemini Flash free tier → Cerebras free → "snippet only" | Fastest free TTFT; OpenAI-compatible API | GLM Coding Plan: its terms limit it to supported coding tools, so it must not be called from this app; Claude API: not free |
 | Offline brain | Python 3.12 + FastAPI service `hamsa-brain` on mini PC, systemd user unit | Indexing/card jobs; already the owner's always-on box | Running jobs on the Mac: RAM |
@@ -85,8 +85,9 @@ flowchart LR
 Runs on every THEM partial and final:
 1. Rules score: interrogative words (ar: وش، ايش، ليش، كيف، هل، متى، كم، وين، مين، فيه، تقدر؛ en: wh-words, "can/could/do/does/is/are you", "tell me", "explain"), "?" in STT output, sentence-final intonation not used (v2).
 2. Card score: max cosine between the partial and all card questions/paraphrases.
-3. Fire when `card_score ≥ 0.82` (show T0 at once, even mid-question) OR `rules_score ≥ 1 AND final segment`
-   (start T1 + T2). Thresholds tuned on `bench/questions-detect.jsonl` in T09.
+3. Fire T0 at once (even mid-question) when top-1 card score ≥ `s` AND top-1 − top-2 ≥ `m`; fire T1 + T2 when
+   `rules_score ≥ 1 AND final segment`. `s` and `m` are calibrated on calls 1–3 in T09 from the e5 score
+   histogram (e5 cosines bunch in ~0.7–1.0, so no fixed 0.8x value). A partial is re-embedded only after it grew by ≥ 2 words.
 Statements without a question word still trigger T0 if the card score is high.
 
 ## Style sample for T2
@@ -94,6 +95,7 @@ Take the last 3 ME final segments of ≥ 4 words from the past 3 minutes; if non
 `lang` of the asker's segment and the default register "Saudi white dialect, English tech terms".
 
 ## Plan B (if T02 finds no engine that passes)
+Expected default if WhisperKit chunked `partial_lag_p50_ms` > 700. Design the overlay so it works in this mode from day 1.
 "Chunked mode": 2–3 s STT lag accepted; no mid-question T0; T0/T1 fire on finals only; manual ask
 (⌥⌘Space) becomes the primary trigger. PRD latency target is restated as "< 1 s after the final segment".
 
@@ -133,7 +135,7 @@ meeting and queued behind other work **[VERIFY limits in T06]**.
 | F1 capture | `swift run hamsa-cli capture --seconds 10 --out /tmp/cap` (Mac) | two WAV files `them.wav`, `me.wav`, both RMS > -50 dBFS while a YouTube video + speech play |
 | F2 STT | `swift run bench-wer --set bench/ar-sa --engine all --with-zoom-load` | winner: `wer_ar<=0.30 wer_en<=0.15 partial_lag_p50_ms<=700 rss_mb<=900 pageouts_growth=0` |
 | F3 cards | `hamsa-brain cards build --project taweed && hamsa-brain cards stats --project taweed` | `cards>=50 bilingual=100% sources=100%` |
-| F4 match+overlay | `swift run bench-latency --replay bench/calls/taweed-01.wav --labels bench/calls/taweed-01.labels.json` | `t0_match_p50_ms<=100 t1_p50_ms<=150 first_text_p50_ms<=800` |
+| F4 match+overlay | `swift run bench-latency --replay bench/calls/call-05.wav --labels bench/calls/call-05.labels.json` | `t0_match_p50_ms<=100 t1_p50_ms<=150 first_text_p50_ms<=800` |
 | F5 generated | `swift run bench-llm --n 50 --with-context` | `ttft_p50_ms<=600 errors=0` |
 | F6 summary | `hamsa-brain summarize --meeting <id>` | vault file `Meetings/<date> <title>.md` with sections Summary / Decisions / Action items / Open questions |
 | F7 learning | `hamsa-brain learn --meeting <id> && hamsa-brain cards stats --project taweed` | `pending_review` count increases by number of unmatched questions |
