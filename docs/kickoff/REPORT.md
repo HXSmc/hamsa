@@ -10,10 +10,10 @@
 
 ## Open questions for the owner
 1. ~~Text only or voice?~~ **Answered 2026-10-22: text only.**
-2. What macOS version is on the MacBook? Capture needs 14.4 or later. Apple's Arabic speech engine needs 26.
-3. Which projects and folders should be indexed first? Which client folders must never be indexed?
-4. Will calls only be in Saudi Arabic and English?
-5. Do you wear headphones on calls? They are required for clean me/them labels.
-6. Must the overlay be hidden from screen share? The plan has a phone fallback if the Mac cannot hide it.
-7. Do you have past call recordings or notes? They are needed to test whether questions can be predicted.
-8. Is the name "Hamsa" (همسة) okay?
+2. **Answered:** MacBook Air M1 8 GB, macOS 26.6.2 (from vault notes; T00 re-checks on the Mac). Apple's on-device Arabic engine is therefore a real candidate.
+3. **Answered:** Taweed first; any other project is indexed when a meeting about it is prepared.
+4. **Answered:** language follows the other side; always ready for both.
+5. **Answered:** AirPods on important calls. Note: while a call uses the AirPods mic, macOS drops them to call-quality audio (16–24 kHz). That is fine for speech recognition.
+6. **Answered:** preferably hidden. T04b tests it; phone fallback if it fails.
+7. **Answered:** none. The first 5 recorded calls (T02a) double as the prediction test.
+8. **Answered:** yes, Hamsa.

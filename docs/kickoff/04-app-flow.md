@@ -20,7 +20,10 @@ Smart defaults: brain address prefilled, project = last used, language = auto.
 ## Journey 1 — Prepare a call (before)
 1. Menu bar → **PrepareMeetingView**. Fields: Title (default "<App> call <date>"; app name from
    `NSWorkspace` frontmost app, no Accessibility permission needed), Confidential toggle (off),
-   Project (picker from `projects`, default last used), optional agenda text.
+   Project (picker from `projects`, default last used; "New project…" picks a vault `Projects/<name>.md` note + repo
+   `docs/` folder and registers it), optional agenda text. Taweed is pre-registered.
+   A project is indexed on demand: first Prepare for it runs a full index, later ones re-index changed files only.
+   Language: cards always carry both English and Saudi Arabic; the overlay picks per the other side's language.
 2. Button **"Prepare 60 answers for Taweed"** → brain runs card job (claude -p, 2–10 min).
    Progress shows "Indexing ✓ → Predicting questions … → Writing answers …".
 3. Done → cards synced to Mac. Status "Ready: 64 cards, index 2 h old".

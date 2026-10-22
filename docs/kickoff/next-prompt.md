@@ -29,7 +29,6 @@ Ownership: `mac/`, `brain/`, `bench/`, `docs/adr/`.
 Acceptance: `test -f mac/Package.swift && (cd brain && uv run pytest -q)` → `1 passed`.
 
 ## Founder-gated (waiting on user)
-- [ ] Answer kickoff open questions (final report §5) #urgent
 - [ ] T02a: record 5 calls (headphones; paste consent line, or staged calls) + 20 clips, label with `bench-label` (by 2026-11-03) #urgent
 - [ ] Create free Groq + Gemini API keys; store in Mac Keychain (`hamsa` service) #soon
 - [ ] Grant mic + system-audio permissions on first Mac run #soon
