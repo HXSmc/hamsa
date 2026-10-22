@@ -14,13 +14,15 @@ country (one-party vs all-party consent), and KSA has rules on privacy and on pe
   legal answer. **Blocker for counsel:** "Is recording + transcribing a business video call
   lawful in KSA with verbal/chat notice, and what notice wording is enough?"
 - Safe default built into the app until counsel answers:
-  1. On Start, Hamsa copies a consent line to the clipboard to paste in the meeting chat:
+  1. Menu item "Copy consent line" (never auto-overwrites the clipboard) to paste in the meeting chat:
      "FYI I take AI notes of this call for my own records. / للعلم أسجّل ملاحظات المكالمة بالذكاء الاصطناعي لاستخدامي الشخصي."
   2. Red menu-bar dot whenever capturing.
-  3. Data stays on owned devices; only question text + snippets go to the LLM provider (T2).
+  3. Audio stays on owned devices. Transcript text goes to Anthropic (`claude -p`) for summary/cards;
+     question + ≤ 3 snippets go to the T2 free-tier provider. "Confidential" meeting switch turns T2 off.
   4. Audio auto-deleted after 30 days; delete-meeting removes everything.
-  5. Client confidential material (e.g. Taweed/NPHIES patient data) is never indexed; the indexer
-     only reads the folders listed per project.
+  5. Client confidential material (e.g. Taweed/NPHIES patient data) is never indexed: the indexer
+     only reads folders listed per project, skips `Secrets/`, and a T05 test fails the build if a
+     chunk matches national-ID / phone / IBAN patterns.
 
 ## Third-party provider terms
 - **GLM Coding Plan**: its docs restrict use to supported coding tools. Use GLM only to *build*
@@ -31,8 +33,8 @@ country (one-party vs all-party consent), and KSA has rules on privacy and on pe
 
 ## OSS licences of borrowed code
 WhisperKit/argmax-oss-swift MIT · FluidAudio Apache-2.0 · AudioCap BSD-2 · sqlite-vec Apache-2.0 ·
-model2vec MIT · Meetily MIT (templates only). All allow personal use and modification; keep
+multilingual-e5-small MIT · Meetily MIT (templates only). All allow personal use and modification; keep
 licence headers. Do **not** copy code from Pluely (GPL-3.0) unless the repo goes GPL. OpenCluely is Apache-2.0 (ok to borrow with notice).
 
 ## Founder-gated
-- [ ] Ask counsel the recording question above #soon
+- [ ] Ask counsel the recording question above — before the first call with an outside party (T17) #soon

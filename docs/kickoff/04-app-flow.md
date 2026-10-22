@@ -18,7 +18,8 @@ flowchart TD
 Smart defaults: brain address prefilled, project = last used, language = auto.
 
 ## Journey 1 — Prepare a call (before)
-1. Menu bar → **PrepareMeetingView**. Fields: Title (prefilled from front Zoom/Teams window title),
+1. Menu bar → **PrepareMeetingView**. Fields: Title (default "<App> call <date>"; app name from
+   `NSWorkspace` frontmost app, no Accessibility permission needed), Confidential toggle (off),
    Project (picker from `projects`, default last used), optional agenda text.
 2. Button **"Prepare 60 answers for Taweed"** → brain runs card job (claude -p, 2–10 min).
    Progress shows "Indexing ✓ → Predicting questions … → Writing answers …".
@@ -27,7 +28,8 @@ Smart defaults: brain address prefilled, project = last used, language = auto.
 - Error: claude -p fails → keep old cards, show error line, offer Retry.
 
 ## Journey 2 — During the call
-1. **Start** (menu bar or ⌥⌘H). Red dot in menu bar = recording. Consent line copied to clipboard.
+1. **Start** (menu bar or ⌥⌘H). Red dot in menu bar = recording. Menu offers "Copy consent line".
+   No headphones detected → yellow "echo risk" badge.
 2. **OverlayPanel** appears (top-right, 360 px wide, max 4 lines, 85% opacity, click-through
    except its buttons, hidden from screen share).
 3. Question detected on THEM channel → card slides in:

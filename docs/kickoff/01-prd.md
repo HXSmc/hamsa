@@ -8,7 +8,8 @@ A macOS menu-bar app that listens to an online meeting (Zoom, Teams, Meet in a b
 2. **Answer overlay** — when someone asks a technical question about one of the owner's projects
    (e.g. "what GPU does Taweed run on?"), a small floating card shows the answer, taken from the
    Obsidian vault and project docs, in the same language and dialect the owner is speaking.
-   Target: a useful answer on screen **< 1 s** after the question ends, often before it ends.
+   Target: a pre-made card or note snippet on screen **< 1 s** after the question ends (often before it ends);
+   a freshly generated answer starts within 1.5 s.
 
 ## Target user (one sentence)
 A solo technical founder who runs bilingual (Saudi Arabic + English) calls about their own
@@ -51,23 +52,28 @@ summary note in their vault in under 2 minutes.
 ## Success metrics (90 days)
 | KPI | Target | Measured by |
 |---|---|---|
-| p50 time from question end to first useful text on overlay | ≤ 800 ms (card / snippet), ≤ 1.5 s (generated first tokens) | `latency_events` table, `hamsa-bench latency` |
+| p50 time from labelled question end to first text (definitions in 03-tdd) | ≤ 800 ms T0/T1; ≤ 1.5 s T2 first token | `latency_events` view, `bench-latency` |
 | Answer hit rate: questions where the overlay was right and used | ≥ 60% by call 10 | owner taps 👍/👎 on card |
 | Card prediction rate: questions matched by a pre-made card | ≥ 40% by call 10 | `questions.matched_card_id not null` |
-| Saudi-Arabic transcript WER on owner's own test set | ≤ 25% | `hamsa-bench wer` |
+| Saudi-Arabic / English transcript WER on owner's own test set | ≤ 30% ar, ≤ 15% en | `bench-wer` |
 | Summary ready after call end | ≤ 2 min, used without edits in ≥ 7/10 calls | owner rating |
 
 ## Top-3 assumptions (each tested in < 2 weeks, SAR 0)
 1. **On-device STT on a MacBook Air M1 8 GB can stream Saudi Arabic with partials ≤ 500 ms while Zoom runs.**
-   Test: task T02 benchmark on 20 recorded clips of the owner's real calls.
+   Test: T02 benchmark on the T02a corpus (5 real calls + 20 clips). If it fails: Plan B in 03-tdd.
 2. **≥ 40% of technical questions in the owner's calls are predictable from the vault before the call.**
-   Test: take 3 past call recordings/notes, generate cards blind, count how many real questions match.
+   Test: task T06a — generate cards blind from the vault, then count matches against questions labelled in the 5 T02a calls.
 3. **A free fast-LLM tier (Groq) gives first token < 500 ms from KSA and enough daily quota for ~30 questions/call.**
-   Test: task T03 latency probe, 100 calls over 2 days from the Mac.
+   Test: task T03 latency probe, 50 calls on each of 2 days from the Mac.
 
 ## Security / privacy posture (decided now)
-- All audio and transcripts stay on the Mac + mini PC (owned devices). Only the question text plus
-  retrieved snippets go to the LLM provider, and only for F5.
-- No accounts → no 2FA question. API keys live in macOS Keychain, never in files.
+- Audio never leaves the Mac + mini PC. Transcript and vault text go to Anthropic via `claude -p`
+  (existing subscription) for summaries and cards. For T2, the question plus up to 3 snippets go to a
+  free-tier provider (assume it may train on them until T03 proves otherwise).
+- Per-meeting **Confidential** switch: T2 off, cards/summary still via `claude -p` only if the owner
+  allows it for that meeting, else summary is skipped and only the transcript is kept.
+- Headphones are required for clean me/them labels (on speakers the app warns "echo risk").
+- No accounts → no 2FA question. API keys and the brain token live in macOS Keychain on the Mac
+  (`~/.config/hamsa/token`, mode 600, on the mini PC only).
 - Recording consent is the owner's responsibility per call; app shows a "recording" indicator and a
-  one-click consent line to paste in chat (see legal.md).
+  "Copy consent line" menu item (see legal.md).

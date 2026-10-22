@@ -20,15 +20,17 @@
    gated items to the project vault note ## Blockers (dashboard rule), and stop.
 
 ## Next step
-**T01 [mini] Scaffold** — create `mac/` (Swift package: HamsaKit lib, hamsa-cli, hamsa-bench executables,
-`project.yml` for XcodeGen app target), `brain/` (uv project `hamsa_brain`, CLI entry `hamsa-brain`, one
-smoke test), `bench/` (README + `.gitignore` for audio), `docs/adr/`.
+**T01 [mini] Scaffold** (T00 runs in the first Mac session; T01 does not need it) — create the layout in
+07-engineering-plan "Repo layout": `mac/Package.swift` with every target and an empty `main.swift` each,
+`mac/App/project.yml`, `brain/` uv project `hamsa_brain` with CLI entry `hamsa-brain` and one smoke test,
+`brain/hamsa_brain/schema/` (empty `001_init.sql` with `schema_version`), `bench/README.md` + `.gitignore`
+for audio, `docs/adr/`.
 Ownership: `mac/`, `brain/`, `bench/`, `docs/adr/`.
 Acceptance: `test -f mac/Package.swift && (cd brain && uv run pytest -q)` → `1 passed`.
 
 ## Founder-gated (waiting on user)
 - [ ] Answer kickoff open questions (final report §5) #urgent
-- [ ] Record 20 Saudi-Arabic / mixed test clips + reference text into `bench/ar-sa/` #urgent
+- [ ] T02a: record 5 real calls (headphones) + 20 clips, label with `bench-label` (by 2026-11-01) #urgent
 - [ ] Create free Groq + Gemini API keys; store in Mac Keychain (`hamsa` service) #soon
 - [ ] Grant mic + system-audio permissions on first Mac run #soon
 - [ ] Ask counsel the recording-consent question in legal.md #soon
