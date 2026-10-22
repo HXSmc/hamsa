@@ -5,7 +5,7 @@
 ## Hardware reality (drives every choice)
 | Device | Spec | Role |
 |---|---|---|
-| MacBook Air M1, 8 GB RAM, macOS 26.6.2, Tailscale name `alimcs-macbook-air-4-5` (from vault notes 2026-09-04 / 2026-10-04, not live-checked; T00 confirms) | ANE + Metal, RAM is the hard limit | Runs the **whole live path**: capture, STT, matching, overlay. Must work with the mini PC unreachable. |
+| MacBook Air M1, 8 GB RAM, macOS 26.6.2 (from vault notes 2026-09-04 / 2026-10-04, not live-checked; T00 confirms) | ANE + Metal, RAM is the hard limit | Runs the **whole live path**: capture, STT, matching, overlay. Must work with the mini PC unreachable. |
 | Mini PC i5-10400T, 31 GB RAM, no GPU | CPU only, always on, has the vault | Runs the **offline brain**: indexing, card generation, summaries, learning loop. Never on the < 1 s path. |
 | Link | Tailscale (installed on both) | Sync of indexes/cards (minutes, not ms) |
 
