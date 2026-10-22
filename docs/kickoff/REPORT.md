@@ -9,7 +9,7 @@
 - Cost: SAR 0.
 
 ## Open questions for the owner
-1. Should answers be text on the overlay only, or also spoken into an earpiece? I read "accent" as dialect wording, e.g. Saudi Arabic with English tech terms.
+1. ~~Text only or voice?~~ **Answered 2026-10-22: text only.**
 2. What macOS version is on the MacBook? Capture needs 14.4 or later. Apple's Arabic speech engine needs 26.
 3. Which projects and folders should be indexed first? Which client folders must never be indexed?
 4. Will calls only be in Saudi Arabic and English?

@@ -45,7 +45,6 @@ Extra speed tricks:
 | Offline brain | Python 3.12 + FastAPI service `hamsa-brain` on mini PC, systemd user unit | Indexing/card jobs; already the owner's always-on box | Running jobs on the Mac: RAM |
 | Card + summary writer | `claude -p` (Claude Code headless, existing subscription) on mini PC; GLM only via its supported coding tools for *building* the app | Best quality, no extra cost, no time limit | Local LLM on i5 CPU: too slow/weak for Arabic |
 | Notes output | Markdown files in `ObsidianVault/Meetings/YYYY-MM-DD <title>.md` | Owner already lives in the vault | Separate DB UI |
-| TTS (only if F8 approved) | Kokoro (already on the Mac per memory) or Apple `AVSpeechSynthesizer` ar-SA voice | Free, local | — |
 
 ## Architecture
 ```mermaid

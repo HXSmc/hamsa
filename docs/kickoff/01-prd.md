@@ -37,7 +37,7 @@ summary note in their vault in under 2 minutes.
 | F5 | Streamed generated answer when no card matches (fast free LLM, RAG over vault) | Must | Covers unpredicted questions |
 | F6 | Post-call summary + action items written to the vault | Must | Feature 1 of the request |
 | F7 | Learning loop: every detected question becomes a reviewed card for the next call | Should | Makes predictions better each meeting; not needed on day 1 |
-| F8 | Optional earpiece voice (TTS) of the answer | Could | Only if owner wants it (open question) |
+
 
 ## Out of scope (with revisit trigger)
 - Multi-user, accounts, sync, sharing — revisit: never (personal tool).
@@ -47,6 +47,7 @@ summary note in their vault in under 2 minutes.
 - Answering general-knowledge questions (not in vault/docs) — revisit: after 10 calls, if > 30% of misses are general knowledge.
 - Speaker diarization among multiple remote people — revisit: when summaries need "who said what" beyond me/them.
 - "Undetectable" stealth claims — the overlay is hidden from normal screen-share only (`NSWindow.sharingType = .none`); no claim beyond that.
+- Spoken answers (TTS in earpiece) — owner chose text only 2026-10-22; revisit: if reading the overlay while talking fails in the first 3 calls.
 - App Store distribution — revisit: never (self-signed local build), so no account-deletion flow is needed.
 
 ## Success metrics (90 days)
