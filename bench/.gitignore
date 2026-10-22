@@ -1,0 +1,9 @@
+*.wav
+*.flac
+*.m4a
+*.mp3
+calls/*.labels.json
+calls/*.txt
+ar-sa/*.txt
+# Built from private project docs: never publish.
+*.jsonl

@@ -20,20 +20,20 @@
    gated items to the project vault note ## Blockers (dashboard rule), and stop.
 
 ## Next step
-**T01 [mini] Scaffold** (T00 runs in the first Mac session; T01 does not need it) — create the layout in
-07-engineering-plan "Repo layout": `mac/Package.swift` with every target and an empty `main.swift` each,
-`mac/App/project.yml`, `brain/` uv project `hamsa_brain` with CLI entry `hamsa-brain` and one smoke test,
-`brain/hamsa_brain/schema/` (empty `001_init.sql` with `schema_version`), `bench/README.md` + `.gitignore`
-for audio, `docs/adr/`.
-Ownership: `mac/`, `brain/`, `bench/`, `docs/adr/`.
-Acceptance: `test -f mac/Package.swift && (cd brain && uv run pytest -q)` → `1 passed`.
+**T05 [mini] Indexer** — `brain/hamsa_brain/index/`, `brain/hamsa_brain/schema/` (see 07-engineering-plan T05).
+Index the Taweed project (vault `Projects/Taweed*.md`, `Projects/Taweed/`, private repo `docs/`) into
+`index.sqlite`: sources, chunks (≤ 800 chars, heading-aware), FTS5, `chunks_vec` + `chunk_vectors`
+(`intfloat/multilingual-e5-small`, prefix `passage: `). Skip `Secrets/` and `*.bak*`; redact national-ID /
+phone / IBAN patterns into `index/pii-report.txt`. Gold set `bench/questions.jsonl` (40 Q: 20 ar-sa,
+20 en) stays local (gitignored; repo is public).
+Acceptance: `uv run hamsa-brain index refresh --project taweed && uv run hamsa-brain eval retrieval --set ../bench/questions.jsonl` → `recall@5>=0.80`; pytest: no `Secrets/` path indexed, no raw PII match in `chunks`.
 
 ## Founder-gated (waiting on user)
 - [ ] T02a: record 5 calls (headphones; paste consent line, or staged calls) + 20 clips, label with `bench-label` (by 2026-11-03) #urgent
 - [ ] Create free Groq + Gemini API keys; store in Mac Keychain (`hamsa` service) #soon
 - [ ] Grant mic + system-audio permissions on first Mac run #soon
 - [ ] Ask counsel the recording-consent question in legal.md #soon
-- [ ] Create GitHub repo + `git remote add origin` — blocks the first Mac session (2026-10-24) #urgent
 
 ## Done log
-- 2026-10-22 · kickoff docs drafted · (see git log)
+- 2026-10-22 · kickoff docs drafted · b4ca53d..f7bd939
+- 2026-10-23 · T01 scaffold (swift build + test pass on Linux swift 6.4.1; brain pytest 1 passed; CI added) · see next commit

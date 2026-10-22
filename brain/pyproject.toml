@@ -1,0 +1,19 @@
+[project]
+name = "hamsa-brain"
+version = "0.0.1"
+description = "Hamsa offline brain: indexing, answer cards, summaries (runs on the mini PC)."
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+hamsa-brain = "hamsa_brain.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
