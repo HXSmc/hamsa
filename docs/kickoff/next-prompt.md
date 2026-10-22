@@ -1,0 +1,38 @@
+# NEXT PROMPT — Hamsa
+> Execute the single task under "Next step", then rewrite this file. Nothing else.
+
+## Standing instructions (copy forward verbatim on every rewrite)
+1. Context: read docs/kickoff/ (PRD scope + out-of-scope, TDD verification map,
+   07-engineering-plan task list, 10-action-plan activities table). This file's Next step is the ONLY task this run.
+   (No 09-financial-model: personal tool, SAR 0 cost; see 03-tdd "Cost".)
+2. Orchestrate per CLAUDE.md defaults — GLM spokes/subagents for volume (quota + peak gates
+   first), hub judgment only. Never build hub-direct. `[mac]` tasks run in a Claude session on the Mac.
+3. Verify before done: run the task's acceptance command(s) with real output, AND exercise the
+   affected UI flow live (Mac UI: `jarvis-screen frame` screenshots as evidence).
+   No fresh evidence = not done.
+4. git add + commit + push. Then check CI per the post-push rule (multi-gmail); CI red = fix
+   before proceeding.
+5. Rewrite THIS file: append to Done log (date, task, commit hash; reconcile against the
+   10-action-plan.md activities table), promote the next unblocked task from
+   07-engineering-plan.md into "Next step" (with its acceptance command), keep this
+   Standing section verbatim, update Founder-gated list.
+6. When no unblocked tasks remain: set Next step to "BLOCKED — founder items only", mirror the
+   gated items to the project vault note ## Blockers (dashboard rule), and stop.
+
+## Next step
+**T01 [mini] Scaffold** — create `mac/` (Swift package: HamsaKit lib, hamsa-cli, hamsa-bench executables,
+`project.yml` for XcodeGen app target), `brain/` (uv project `hamsa_brain`, CLI entry `hamsa-brain`, one
+smoke test), `bench/` (README + `.gitignore` for audio), `docs/adr/`.
+Ownership: `mac/`, `brain/`, `bench/`, `docs/adr/`.
+Acceptance: `test -f mac/Package.swift && (cd brain && uv run pytest -q)` → `1 passed`.
+
+## Founder-gated (waiting on user)
+- [ ] Answer kickoff open questions (final report §5) #urgent
+- [ ] Record 20 Saudi-Arabic / mixed test clips + reference text into `bench/ar-sa/` #urgent
+- [ ] Create free Groq + Gemini API keys; store in Mac Keychain (`hamsa` service) #soon
+- [ ] Grant mic + system-audio permissions on first Mac run #soon
+- [ ] Ask counsel the recording-consent question in legal.md #soon
+- [ ] Create GitHub repo + `git remote add origin` (push is owner-gated for new repos) #soon
+
+## Done log
+- 2026-10-22 · kickoff docs drafted · (see git log)
