@@ -34,6 +34,14 @@ def build_parser() -> argparse.ArgumentParser:
     cs = cd.add_parser("stats")
     cs.add_argument("--project", required=True)
 
+    sm = sub.add_parser("summarize", help="write the post-call vault note (Claude)")
+    src = sm.add_mutually_exclusive_group(required=True)
+    src.add_argument("--meeting", help="meeting id in --live-db")
+    src.add_argument("--transcript", type=Path, help="text file, one '[mm:ss] ME|THEM: text' line per segment")
+    sm.add_argument("--live-db", type=Path)
+    sm.add_argument("--title", default="Call")
+    sm.add_argument("--out", type=Path, help="folder (default: vault Meetings/)")
+
     sv = sub.add_parser("serve", help="run the brain API (binds to the Tailscale IP only)")
     sv.add_argument("--port", type=int, default=8770)
 
@@ -53,6 +61,25 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.cmd is None:
         parser.print_help()
+        return 0
+
+    if args.cmd == "summarize":
+        import re as _re
+
+        from hamsa_brain.summarize.note import VAULT_MEETINGS, Meeting, load_meeting, summarize
+
+        if args.meeting:
+            m = load_meeting(args.live_db, args.meeting)
+        else:
+            segs = []
+            for line in args.transcript.read_text().splitlines():
+                mt = _re.match(r"\[(\d+):(\d\d)\]\s*(ME|THEM):\s*(.*)", line)
+                if mt:
+                    segs.append((mt[3].lower(), (int(mt[1]) * 60 + int(mt[2])) * 1000, mt[4]))
+            m = Meeting("file", args.title, None, int(time.time()), False, True, segs)
+        t = time.time()
+        path = summarize(m, args.out or VAULT_MEETINGS)
+        print(json.dumps({"note": str(path) if path else None, "segments": len(m.segments), "seconds": round(time.time() - t, 1)}))
         return 0
 
     if args.cmd == "serve":
