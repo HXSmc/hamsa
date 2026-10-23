@@ -8,6 +8,6 @@ struct HamsaCLI: AsyncParsableCommand {
         commandName: "hamsa-cli",
         abstract: "Hamsa developer CLI.",
         version: Hamsa.version,
-        subcommands: [Sync.self, Capture.self]
+        subcommands: [Sync.self, Capture.self, PanelTest.self]
     )
 }

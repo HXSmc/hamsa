@@ -52,3 +52,4 @@ Later mini-PC tasks wait on recorded calls: T06a (predictability) and T09 thresh
 - 2026-10-23 · T00 SpeechTranscriber check: no ar_SA (30 locales); DictationTranscriber lists ar_SA (ADR 000) · swap line relaxed by parent
 - 2026-10-23 · Step 2 Mac build+test: `swift build -j 2` OK (18.5 s), `swift test` 15 tests 0 failures (Xcode 27.1, Swift 6.4)
 - 2026-10-23 · T04 capture: `hamsa-cli capture --seconds 10 --out /tmp/cap` → them.wav rms_dbfs=-21.3, me.wav rms_dbfs=-40.0, both 16 kHz mono, same length (silence padded by wall clock: a process tap sends nothing while no app plays). Source was `say` through the speakers (mic got the bleed), not YouTube + owner voice; AirPods switch not tested (owner). No permission pop-up (iTerm already allowed).
+- 2026-10-23 · T04b panel-test built: `hamsa-cli panel-test --seconds 6` → window on screen, layer 3 (floating), CGWindowSharingState 0 (none). Screen-share test in Zoom/Teams/Meet NOT run (needs owner + second account)
