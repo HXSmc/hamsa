@@ -18,5 +18,8 @@ and facts from private project docs. The repo is public; keep that data local.
   voice's trailing silence), so `question_end_lag_ms` reads low.
 - `scripts/call-NN.jsonl` (private, never committed) → `hamsa-cli rehearse --script ../bench/scripts/call-NN.jsonl --out ../bench/calls`
   (run from `mac/`): mock call; `say` plays each question, a share-hidden panel shows the answer (verbatim) or a topic cue
-  (own words, `verbatim: false`, `text` empty + `cue` set: label later). Writes `call-NN.wav` / `.me.wav` / `.labels.json`.
+  (own words, `verbatim: false`, `text` empty + `cue` set: label later). Writes `call-NN.wav` / `.me.wav` / `.labels.json`
+  (`provisional: false`). Question `start` = `say` launch, ~0.85–1.06 s before the voice starts; `end` = `say` exit,
+  25–146 ms after the last voiced frame (smoke run). `me` items span the whole answer window. Watch each TURN line:
+  `them_s` and `me_s` more than ~0.3 s apart → Ctrl-C and re-take. `make-synth-call.sh` writes the same `call-01.*` names.
 - `make-synth-set.sh` → `synth/{ar,en}/NN.wav|txt`: PROVISIONAL TTS set for T02 until `ar-sa/` (T02a) exists. Only the `.txt` refs are committed.

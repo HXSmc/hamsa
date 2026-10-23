@@ -59,7 +59,9 @@ struct Rehearse: AsyncParsableCommand {
         let session = try Session(dir: dir, names: names)
         session.installInterruptHandler()
 
-        var labels = CallLabels(audio: ["them": names.them, "me": names.me], provisional: true, items: [])
+        // provisional=false: this IS the T02a corpus (owner's real voice on "me"; "them" is TTS, see ADR 001).
+        var labels = CallLabels(audio: ["them": names.them, "me": names.me], provisional: false, items: [])
+        try Self.write(labels, to: labelsURL)  // a --force re-take must never keep the old take's labels
         func ms(_ s: Double) -> Double { (s * 1000).rounded() / 1000 }
 
         for (i, t) in turns.enumerated() {
