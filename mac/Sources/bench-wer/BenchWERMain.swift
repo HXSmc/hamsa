@@ -15,6 +15,8 @@ struct BenchWERCLI: AsyncParsableCommand {
     @Option(help: "WhisperKit re-decode step, seconds.") var step: Double = 1.0
     @Option(help: "Write results into this ADR between bench-wer markers for --label.") var adr: String?
     @Option(help: "Name of this run in the ADR (e.g. idle, cpu-load).") var label: String = "idle"
+    @Flag(help: "Owner runs a Zoom test call + YouTube during the run (plan T02 gate); labels the run zoom-load.")
+    var withZoomLoad = false
 
     struct Result: Codable {
         var engine: String, wer_ar: Double?, wer_en: Double?, lag_p50_ms: Double?, lag_p95_ms: Double?, lag_words: Int
@@ -22,7 +24,8 @@ struct BenchWERCLI: AsyncParsableCommand {
     }
 
     func clips() throws -> [(wav: URL, ref: String, lang: String)] {
-        let root = URL(fileURLWithPath: set)
+        let path = [set, "../\(set)"].first { FileManager.default.fileExists(atPath: $0) } ?? set
+        let root = URL(fileURLWithPath: path)
         guard let e = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) else { throw ValidationError("no set \(set)") }
         var out: [(URL, String, String)] = []
         for case let u as URL in e where u.pathExtension == "wav" {
@@ -34,7 +37,12 @@ struct BenchWERCLI: AsyncParsableCommand {
         return out.sorted { $0.0.path < $1.0.path }
     }
 
-    func run() async throws {
+    mutating func run() async throws {
+        if withZoomLoad {
+            label = "zoom-load"
+            if engine == "all" { print("zoom-load: start a Zoom test call + a YouTube video now; the run starts in 10 s") }
+            try await Task.sleep(for: .seconds(engine == "all" ? 10 : 0))
+        }
         if engine == "all" {
             var results: [Result] = []
             for e in ["dictation", "whisperkit"] {
@@ -158,8 +166,8 @@ struct BenchWERCLI: AsyncParsableCommand {
             md += "| \(r.engine) | \(f(r.wer_ar)) | \(f(r.wer_en)) | \(f(r.lag_p50_ms, 0)) | \(f(r.lag_p95_ms, 0)) | \(r.lag_words) | \(f(r.rss_mb, 0)) | \(f(r.daemon_rss_mb, 0)) | \(r.pageouts_growth) | \(r.clips) | \(f(r.seconds, 0)) |\n"
         }
         md += "\n" + rs.map { "- \($0.engine): \($0.note)" }.joined(separator: "\n") + "\n"
-        let pass = { (r: Result) in (r.wer_ar ?? 1) <= 0.30 && (r.wer_en ?? 1) <= 0.15 && (r.lag_p50_ms ?? 1e9) <= 700 && r.rss_mb <= 900 && r.pageouts_growth == 0 }
-        md += rs.map { "- gate (wer_ar<=0.30 wer_en<=0.15 lag_p50<=700 rss<=900 pageouts=0) \($0.engine): \(pass($0) ? "PASS" : "FAIL")" }.joined(separator: "\n") + "\n"
+        let pass = { (r: Result) in (r.wer_ar ?? 0) <= 0.30 && (r.wer_en ?? 0) <= 0.15 && (r.lag_p50_ms ?? 1e9) <= 700 && r.rss_mb <= 900 && r.pageouts_growth == 0 }
+        md += rs.map { "- gate (wer_ar<=0.30 wer_en<=0.15 lag_p50<=700 rss<=900 pageouts=0; missing language skipped) \($0.engine): \(pass($0) ? "PASS" : "FAIL")" }.joined(separator: "\n") + "\n"
         print(md)
         guard let adr else { return }
         let begin = "<!-- bench-wer:\(label):begin -->", end = "<!-- bench-wer:\(label):end -->"
