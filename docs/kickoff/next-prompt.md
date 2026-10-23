@@ -27,10 +27,8 @@ depend on recorded calls is done. First Mac-session task when the owner frees th
 Later mini-PC tasks wait on recorded calls: T06a (predictability) and T09 thresholds need T02a.
 
 ## Founder-gated (waiting on user)
-- [ ] T02a: record 5 calls (headphones; paste consent line, or staged calls) + 20 clips, label with `bench-label` (by 2026-11-03) #urgent
-- [ ] Create free Groq + Gemini API keys; store in Mac Keychain (`hamsa` service) #soon
+- [ ] Groq + Gemini keys: Claude fetches them via the Mac browsers (owner approved 2026-10-23)
 - [ ] Grant mic + system-audio permissions on first Mac run #soon
-- [ ] Ask counsel the recording-consent question in legal.md #soon
 
 ## Done log
 - 2026-10-22 · kickoff docs drafted · b4ca53d..f7bd939
