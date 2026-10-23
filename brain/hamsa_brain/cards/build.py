@@ -16,6 +16,7 @@ from hamsa_brain.index.doc2query import _claude, _parse
 
 MAX_PARAPHRASES = 10
 PER_TOPIC = 6
+N_TOPICS = 25  # 15 gave 47 cards for Taweed (T06 target >= 50)
 BATCH = 40
 
 TOPICS_PROMPT = """You prepare a founder for a video call about their project "{project}".
@@ -23,7 +24,7 @@ Meeting: {agenda}
 Project overview (excerpt):
 {overview}
 
-List 15 short search queries covering what the other side will most likely ask (technical, product,
+List {n_topics} short search queries covering what the other side will most likely ask (technical, product,
 security, pricing, status). Mix English and spoken Saudi Arabic. Reply with ONLY a JSON object:
 {{"topics": ["...", ...]}}"""
 
@@ -79,7 +80,7 @@ def valid_card(c: dict, allowed: set[int]) -> dict | None:
 
 def build(idx, cdb, pid: str, project_name: str, agenda: str, embedder, ask=_claude) -> dict:
     agenda = agenda or f"General call about {project_name}"
-    topics = _parse(ask(TOPICS_PROMPT.format(project=project_name, agenda=agenda, overview=_overview(idx, pid)), "haiku")).get("topics", [])
+    topics = _parse(ask(TOPICS_PROMPT.format(project=project_name, agenda=agenda, overview=_overview(idx, pid), n_topics=N_TOPICS), "haiku")).get("topics", [])
     passages = collect_passages(idx, pid, [agenda, *topics], embedder)
     ids = list(passages)
     cards, failed = [], 0
