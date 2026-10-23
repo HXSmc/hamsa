@@ -15,7 +15,9 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.5.0"),
     ],
     targets: [
-        .target(name: "HamsaKit"),
+        // System SQLite (macOS SDK / libsqlite3-dev on Linux): FTS5 only; vectors are searched in memory.
+        .systemLibrary(name: "CSQLite", path: "Sources/CSQLite"),
+        .target(name: "HamsaKit", dependencies: ["CSQLite"]),
         .target(name: "HamsaBench", dependencies: ["HamsaKit"]),
         .executableTarget(
             name: "hamsa-cli",
