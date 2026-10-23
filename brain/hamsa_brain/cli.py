@@ -34,6 +34,9 @@ def build_parser() -> argparse.ArgumentParser:
     cs = cd.add_parser("stats")
     cs.add_argument("--project", required=True)
 
+    sv = sub.add_parser("serve", help="run the brain API (binds to the Tailscale IP only)")
+    sv.add_argument("--port", type=int, default=8765)
+
     ev = sub.add_parser("eval", help="quality checks").add_subparsers(dest="action", required=True)
     e = ev.add_parser("retrieval", help="recall@k on a gold jsonl")
     e.add_argument("--set", required=True, type=Path)
@@ -50,6 +53,17 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.cmd is None:
         parser.print_help()
+        return 0
+
+    if args.cmd == "serve":
+        import subprocess
+
+        import uvicorn
+
+        from hamsa_brain.api.app import create_app, default_runner, load_or_create_token
+
+        host = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True, check=True).stdout.split()[0]
+        uvicorn.run(create_app(load_or_create_token(), default_runner), host=host, port=args.port, log_level="warning")
         return 0
 
     from hamsa_brain.config import DATA_DIR, index_path, load_projects
