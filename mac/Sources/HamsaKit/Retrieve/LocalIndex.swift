@@ -12,6 +12,18 @@ public final class LocalIndex: @unchecked Sendable {
     }
 
     static let rrfK = 60.0
+    /// (bm25, chunk vectors, generated questions) per asker language; same as brain store.WEIGHTS.
+    static let weights: [String: (Double, Double, Double)] = ["ar": (0.5, 0, 1), "en": (1, 0.5, 1), "mixed": (1, 0.5, 1)]
+
+    /// Same rule as brain chunk.detect_lang: Arabic vs Latin letter counts.
+    public static func lang(_ s: String) -> String {
+        var ar = 0, en = 0
+        for u in s.unicodeScalars {
+            if (0x0600...0x06FF).contains(u.value) { ar += 1 } else if (u.value >= 65 && u.value <= 90) || (u.value >= 97 && u.value <= 122) { en += 1 }
+        }
+        if ar > 0, en > 0, Double(min(ar, en)) / Double(max(ar, en)) > 0.2 { return "mixed" }
+        return ar > en ? "ar" : "en"
+    }
     let db: SQLiteDB
     let projectID: String
     let dim: Int
@@ -59,9 +71,11 @@ public final class LocalIndex: @unchecked Sendable {
     }
 
     public func search(_ q: String, queryVector qv: [Float], k: Int = 5, pool: Int = 30) throws -> [Hit] {
+        let (wBM25, wChunk, wQ) = Self.weights[Self.lang(q)]!
         var ranks: [Int: Double] = [:]
-        func add(_ ids: [Int]) {
-            for (r, id) in ids.enumerated() { ranks[id, default: 0] += 1 / (Self.rrfK + Double(r)) }
+        func add(_ ids: [Int], _ w: Double) {
+            guard w > 0 else { return }
+            for (r, id) in ids.enumerated() { ranks[id, default: 0] += w / (Self.rrfK + Double(r)) }
         }
         let fq = Self.ftsQuery(q)
         if !fq.isEmpty {
@@ -70,9 +84,9 @@ public final class LocalIndex: @unchecked Sendable {
                 SELECT f.rowid FROM chunks_fts f JOIN chunks c ON c.id = f.rowid JOIN sources s ON s.id = c.source_id
                 WHERE chunks_fts MATCH ? AND s.project_id = ? ORDER BY bm25(chunks_fts) LIMIT ?
                 """, [fq, projectID, pool]) { bm.append($0.int(0)) }
-            add(bm)
+            add(bm, wBM25)
         }
-        add(Self.topRows(chunkVecs, dim: dim, qv, n: pool).map { chunkIDs[$0] })
+        add(Self.topRows(chunkVecs, dim: dim, qv, n: pool).map { chunkIDs[$0] }, wChunk)
         if !questionVecs.isEmpty {
             var seen: [Int] = []
             for r in Self.topRows(questionVecs, dim: dim, qv, n: questionChunkIDs.count) {
@@ -80,7 +94,7 @@ public final class LocalIndex: @unchecked Sendable {
                 if !seen.contains(id) { seen.append(id) }
                 if seen.count == pool { break }
             }
-            add(seen)
+            add(seen, wQ)
         }
         let top = ranks.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }.prefix(k)
         return try top.map { id, score in

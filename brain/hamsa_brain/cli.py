@@ -50,6 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--set", required=True, type=Path)
     e.add_argument("--project", default="taweed")
     e.add_argument("--k", type=int, default=5)
+    e.add_argument("--judge", action="store_true", help="also ask Claude whether the top-k actually answer")
     mo = ev.add_parser("models", help="embedding-model shootout on the gold set")
     mo.add_argument("--set", required=True, type=Path)
     mo.add_argument("--models", nargs="+", default=None)
@@ -142,4 +143,8 @@ def main(argv: list[str] | None = None) -> int:
         for m in res.pop("misses"):
             print(f"MISS {m['q']}  -> {m['got']}", file=sys.stderr)
         print(" ".join(f"{k}={v}" for k, v in res.items()))
+        if args.judge:
+            from hamsa_brain.eval.retrieval import judged_recall
+
+            print(" ".join(f"{k}={v}" for k, v in judged_recall(db, E5Embedder(), args.project, args.set, args.k).items()))
     return 0

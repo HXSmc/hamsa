@@ -13,6 +13,9 @@ from hamsa_brain.index.chunk import detect_lang
 from hamsa_brain.index.embed import DIM
 
 RRF_K = 60
+# Fusion weights per asker language (bm25, chunk vectors, generated questions); tuned on the T05 gold set.
+# Arabic questions vs mostly English prose: BM25 and chunk vectors are mostly noise (ADR 004).
+WEIGHTS = {"ar": (0.5, 0.0, 1.0), "en": (1.0, 0.5, 1.0), "mixed": (1.0, 0.5, 1.0)}
 
 
 def pack(vec: list[float]) -> bytes:
@@ -93,6 +96,7 @@ def _fts_query(q: str) -> str:
 
 
 def search(db, pid: str, q: str, qvec: list[float], k: int = 5, pool: int = 30) -> list[dict]:
+    w_bm25, w_chunk, w_q = WEIGHTS[detect_lang(q)]
     ranks: dict[int, float] = {}
     fq = _fts_query(q)
     if fq:
@@ -102,7 +106,7 @@ def search(db, pid: str, q: str, qvec: list[float], k: int = 5, pool: int = 30) 
             (fq, pid, pool),
         ).fetchall()
         for r, (cid,) in enumerate(bm25):
-            ranks[cid] = ranks.get(cid, 0) + 1 / (RRF_K + r)
+            ranks[cid] = ranks.get(cid, 0) + w_bm25 / (RRF_K + r)
     # vec0 KNN has no join filter, so over-fetch and filter by project after.
     knn = db.execute(
         "SELECT v.rowid FROM chunks_vec v WHERE v.embedding MATCH ? AND k = ?", (pack(qvec), pool * 4)
@@ -115,7 +119,7 @@ def search(db, pid: str, q: str, qvec: list[float], k: int = 5, pool: int = 30) 
         )
     }
     for r, cid in enumerate([c for (c,) in knn if c in in_project][:pool]):
-        ranks[cid] = ranks.get(cid, 0) + 1 / (RRF_K + r)
+        ranks[cid] = ranks.get(cid, 0) + w_chunk / (RRF_K + r)
     # doc2query: nearest generated questions, best rank per chunk.
     qids, qmat = _question_matrix(db, pid)
     if qmat is not None:
@@ -127,8 +131,8 @@ def search(db, pid: str, q: str, qvec: list[float], k: int = 5, pool: int = 30) 
             if len(seen) == pool:
                 break
         for r, cid in enumerate(seen):
-            ranks[cid] = ranks.get(cid, 0) + 1 / (RRF_K + r)
-    top = sorted(ranks, key=ranks.get, reverse=True)[:k]
+            ranks[cid] = ranks.get(cid, 0) + w_q / (RRF_K + r)
+    top = [c for c in sorted(ranks, key=ranks.get, reverse=True) if ranks[c] > 0][:k]
     out = []
     for cid in top:
         path, heading, text = db.execute(

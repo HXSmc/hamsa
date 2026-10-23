@@ -26,3 +26,25 @@ asker's language, which small on-device models do well. Mac cost: about 1.5 KB p
 ## Rejected
 - Bigger embedder (bge-m3 / Qwen3-Embedding): plateau above, about 1 GB+ on an 8 GB Mac.
 - LLM re-ranking at question time: seconds of latency; breaks the < 1 s path.
+
+## Result (2026-10-23, full Taweed index: 2,947 chunks sent, 7,341 questions, 0 failed batches, 19.5 min)
+Ranked lists measured alone (strict = the gold chunk itself in top 5):
+
+| List | ar strict@5 | en strict@5 |
+|---|---|---|
+| BM25 | 0.05 | 0.20 |
+| chunk vectors | 0.05 | 0.40 |
+| generated questions | 0.40 | 0.35 |
+
+Equal-weight fusion dragged Arabic down to 0.10, so fusion is weighted per asker language
+(bm25, chunk, questions): ar (0.5, 0, 1), en/mixed (1, 0.5, 1). Brain and Mac use the same weights.
+
+| Metric (40 gold Qs) | all | en | ar |
+|---|---|---|---|
+| strict recall@5 | 0.475 | 0.50 | 0.45 |
+| **judged recall@5** (Claude: a top-5 passage states the answer) | **0.875** | 1.00 | 0.75 |
+
+The T05 gate uses judged recall: Taweed facts repeat across many docs, so "the one gold chunk" undercounts
+correct answers. Weights were picked on the same 40 questions (risk of overfit: re-check on the T02a calls).
+Arabic (0.75) is the weak side; next lever if real calls confirm it: Arabic paraphrases of the doc text itself.
+Mac parity: top-5 overlap 0.99, top-1 40/40, 7.6 ms per search on the mini PC CPU.
