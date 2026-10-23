@@ -42,6 +42,9 @@ for ch, lang, n in turns:
                       tech=tech, verbatim=True, lang=lang))
     for t in tracks.values(): t += silence(GAP)
 names = {"them": "call-01.wav", "me": "call-01.me.wav"}
+# Real owner recordings (hamsa-cli rehearse) also use call-01; never overwrite them.
+if any(os.path.exists(os.path.join(root, "calls", n)) for n in [*names.values(), "call-01.labels.json"]) and os.environ.get("FORCE") != "1":
+    sys.exit("bench/calls/call-01.* exists (maybe a real recording); set FORCE=1 to overwrite")
 for ch, data in tracks.items():
     with wave.open(os.path.join(root, "calls", names[ch]), "wb") as w:
         w.setnchannels(1); w.setsampwidth(2); w.setframerate(RATE); w.writeframes(bytes(data))
