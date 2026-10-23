@@ -10,3 +10,5 @@ Test data for the acceptance commands in `docs/kickoff/07-engineering-plan.md`.
 
 Audio, labels and the `*.jsonl` sets are never committed (see `.gitignore`): they hold other people's voices
 and facts from private project docs. The repo is public; keep that data local.
+
+- `make-synth-set.sh` → `synth/{ar,en}/NN.wav|txt`: PROVISIONAL TTS set for T02 until `ar-sa/` (T02a) exists. Only the `.txt` refs are committed.

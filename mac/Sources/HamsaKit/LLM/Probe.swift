@@ -22,7 +22,7 @@ public enum Probe {
     }
 
     /// Drops tashkeel/tatweel, unifies alef/yaa/taa-marbuta forms and digits, case-folds, trims.
-    static func normalize(_ s: String) -> String {
+    public static func normalize(_ s: String) -> String {
         var out = String.UnicodeScalarView()
         for u in s.unicodeScalars {
             switch u.value {
