@@ -1,17 +1,25 @@
 # Hamsa: what I need from you
 
-Updated 2026-10-23. Everything that can run on the mini PC is built and tested.
+Updated 2026-10-23 02:48. Everything that can run on the mini PC is built and tested. The Mac session is started (iTerm tab 7) and waits for Xcode.
 The rest needs the Mac and four things only you can do.
 
-## 1. Unlock the Mac (today, 1 minute)
-- **Why:** the Mac is on the lock screen. Typing your password is yours only, so I cannot use the Mac
-  at all. No other Claude session is using it right now (checked 02:38).
-- **What to do:** unlock it and leave it unlocked, or tell me when it is free.
-- **What I do next:** open a Terminal and start a Claude session there:
-  `git clone https://github.com/HXSmc/hamsa.git ~/work/hamsa && cd ~/work/hamsa && claude`.
-  That session checks the Mac (macOS, Xcode), then builds the audio capture.
-- **One click from you:** the first run shows macOS pop-ups for the **microphone** and **system audio**.
-  Click **Allow** on both. I cannot click permission pop-ups for you.
+## 1. Install Xcode on the Mac (today, about 30-60 minutes, mostly download)
+- **Why:** the Mac session started (iTerm tab 7) and checked the Mac. It has **no Xcode**, only old
+  command-line tools (Swift 5.8, macOS 13.3 SDK). Hamsa needs the macOS 26 SDK to capture call audio
+  and to build the app. Installing apps with your Apple ID is yours only.
+- **What to do:**
+  1. App Store, search **Xcode**, click Get/Install (about 12 GB, check free disk space first).
+  2. Open Xcode once and accept the licence.
+  3. In Terminal: `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` (asks your password).
+  4. Xcode, Settings, Accounts: add your Apple ID (free). This gives a signing identity, so macOS
+     keeps the microphone permission between builds.
+- **Free some memory before builds:** the Mac's swap was 6.6 of 7.2 GB used, with 5 Claude tabs open.
+  Close the Claude tabs you don't need.
+- **Then:** in tab 7 type `Xcode installed, rerun the brief from Step 1`. When macOS asks for
+  **Microphone** and **System audio** access, click **Allow**.
+- **Still owner-only:** the Mac's safety check blocked the Mac session from adding the
+  "keep contact between sessions" rule to the Mac's `~/.claude/CLAUDE.md`. Paste it yourself from the
+  bottom of `docs/kickoff/mac-session-brief.md`, or approve that edit when the session asks.
 
 ## 2. Make two free API keys (10 minutes)
 They are for live answers when no prepared answer matches.
