@@ -7,3 +7,4 @@ calls/*.txt
 ar-sa/*.txt
 # Built from private project docs: never publish.
 *.jsonl
+!llm-ar.jsonl

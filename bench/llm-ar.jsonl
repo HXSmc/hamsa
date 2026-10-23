@@ -1,0 +1,10 @@
+{"question": "كم سعر باقة Hamsa الشهرية؟", "snippets": ["Hamsa Pro plan is priced at $49 per month, billed monthly.", "الباقة المجانية تعطيك ٢٠ دقيقة في الشهر بس."], "expected": "49|٤٩"}
+{"question": "كم عدد الفريق عندكم الحين؟", "snippets": ["Team update: we are 7 people now, 4 engineers, 2 sales and 1 ops.", "نخطط نوظف مهندسين جدد بعد جولة التمويل."], "expected": "7|٧|سبعة|سبعه"}
+{"question": "متى بتطلقون رسميا؟", "snippets": ["الإطلاق الرسمي يوم ١٥ مارس ٢٠٢٧ في الرياض.", "Beta testers get early access two weeks before launch."], "expected": "15|١٥"}
+{"question": "وش التقنية اللي مبني عليها التطبيق؟", "snippets": ["The Mac app is native Swift with SwiftUI; the brain service runs on Python FastAPI.", "الصوت يتحول لنص على الجهاز نفسه عشان الخصوصية."], "expected": "swift"}
+{"question": "كم عميل عندكم يدفع الحين؟", "snippets": ["We have 23 paying customers, mostly agencies in Riyadh and Jeddah.", "متوسط الاشتراك الشهري للعميل قريب من الباقة الاحترافية."], "expected": "23|٢٣"}
+{"question": "كم جمعتوا في جولة التمويل؟", "snippets": ["Pre-seed closed at $400k from two angel investors.", "المستثمرين ملاك من جدة وما أخذوا مقعد في المجلس."], "expected": "400|٤٠٠"}
+{"question": "وش الميزة الجاية في الخارطة؟", "snippets": ["Next on the roadmap: a Windows version in Q3, right after the iPhone companion.", "الأولوية الحالية تحسين سرعة الجواب."], "expected": "windows|ويندوز"}
+{"question": "كم سرعة الرد اللي تستهدفونها؟", "snippets": ["الهدف أن الجواب يطلع خلال ٦٠٠ مللي ثانية من نهاية السؤال.", "Median latency today is still around 900 ms in our tests."], "expected": "600|٦٠٠"}
+{"question": "مين المؤسس التقني عندكم؟", "snippets": ["CTO and cofounder is Sara Almutairi, previously an engineer at STC.", "المؤسس الثاني مسؤول عن المبيعات والشراكات."], "expected": "sara|ساره|سارة|سارا"}
+{"question": "كم سعر الباقة السنوية؟", "snippets": ["Annual billing gives two months free: $490 per year for Pro.", "الدفع السنوي يتم مرة وحدة عن طريق البطاقة."], "expected": "490|٤٩٠"}
