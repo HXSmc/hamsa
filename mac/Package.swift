@@ -15,6 +15,9 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.5.0"),
         // T02 (owner-approved edit): WhisperKit, macOS only (CoreML); Linux never builds it.
         .package(url: "https://github.com/argmaxinc/argmax-oss-swift.git", from: "1.1.1"),
+        // T05b (owner-approved edit): XLM-R SentencePiece tokenizer for the e5 embedder, macOS only.
+        // WhisperKit's vendored copy (1.1.6) splits Arabic diacritics wrongly; 1.3.5 walks unicode scalars.
+        .package(url: "https://github.com/huggingface/swift-transformers.git", from: "1.3.5"),
     ],
     targets: [
         // System SQLite (macOS SDK / libsqlite3-dev on Linux): FTS5 only; vectors are searched in memory.
@@ -22,6 +25,7 @@ let package = Package(
         .target(name: "HamsaKit", dependencies: [
             "CSQLite",
             .product(name: "WhisperKit", package: "argmax-oss-swift", condition: .when(platforms: [.macOS])),
+            .product(name: "Tokenizers", package: "swift-transformers", condition: .when(platforms: [.macOS])),
         ]),
         .target(name: "HamsaBench", dependencies: ["HamsaKit"]),
         .executableTarget(

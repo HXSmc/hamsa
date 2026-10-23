@@ -1,3 +1,5 @@
 .build/
 *.xcodeproj/
 Models/*.mlmodelc/
+Models/*.mlpackage/
+Models/e5-small/
