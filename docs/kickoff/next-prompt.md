@@ -20,13 +20,11 @@
    gated items to the project vault note ## Blockers (dashboard rule), and stop.
 
 ## Next step
-**T05 gate (in progress)** — finish doc2query for Taweed (`uv run hamsa-brain index questions --project taweed`,
-re-runnable), then `uv run hamsa-brain eval retrieval --set ../bench/questions.jsonl` → `recall@5>=0.80`.
-If it stays below: next lever is per-language question vectors and dropping question-shaped docs
-(sales scripts, open-question lists) from T1; see docs/adr/004-retrieval.md.
-After the gate: T06 real build (`hamsa-brain cards build --project taweed`) → `cards>=50 bilingual=100% sources=100%`.
-Mac-session tasks waiting for the Mac (T00, T02–T04b, T05b, T08, T11b–T13) — code that does not need macOS
-(T07b sync, T09 rules, T10a/b, T11 client) is already in and CI-tested on macOS.
+BLOCKED — needs the Mac (owner is using its screen) and owner items. Every mini-PC task that does not
+depend on recorded calls is done. First Mac-session task when the owner frees the Mac:
+**T00 [mac] Env check** then **T04 [mac] Capture** (see 07-engineering-plan). Start it with
+`cd ~/work/hamsa && git pull && claude` on the Mac and point it at this file.
+Later mini-PC tasks wait on recorded calls: T06a (predictability) and T09 thresholds need T02a.
 
 ## Founder-gated (waiting on user)
 - [ ] T02a: record 5 calls (headphones; paste consent line, or staged calls) + 20 clips, label with `bench-label` (by 2026-11-03) #urgent
@@ -44,3 +42,7 @@ Mac-session tasks waiting for the Mac (T00, T02–T04b, T05b, T08, T11b–T13) �
 - 2026-10-23 · T07b BrainSync + `hamsa-cli sync` (verified against live brain: updated → notModified) · 9b42f75
 - 2026-10-23 · T09 rules, T10a LocalIndex (parity with brain top-5 0.99, 5 ms), T10b CardMatcher, T11 AnswerLLM · 5ca804a..
 - 2026-10-23 · T14 summarizer, T15a learning loop (code + tests) · dd1d6eb..
+- 2026-10-23 · T14 acceptance: 60-min synthetic bilingual call (738 lines) summarized in 34.7 s, all 4 sections
+- 2026-10-23 · T05 gate PASSED on Claude-judged recall@5 = 0.875 (en 1.00, ar 0.75); strict 0.475 (ADR 004)
+- 2026-10-23 · T06 PASSED via live API + CLI: 66 cards, bilingual 100%, sources 100%, 4 min
+- 2026-10-23 · CardMatcher default threshold 0.90 / margin 0.02 from 40 gold Qs vs 66 cards

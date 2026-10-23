@@ -2,7 +2,7 @@ import Foundation
 
 /// T10b: match a (partial) question against prepared cards. Fires only when the best card is both
 /// close enough (`minScore`) and clearly ahead of the runner-up (`minMargin`); 03-tdd "Question detector".
-/// Thresholds are placeholders until T09 calibrates them on calls 1-3.
+/// Defaults from the 40-question T05 set vs 66 Taweed cards (~8/10 shown cards correct); T09 recalibrates on calls 1-3.
 public final class CardMatcher: @unchecked Sendable {
     public struct Card: Equatable, Sendable {
         public let id: Int
@@ -26,7 +26,7 @@ public final class CardMatcher: @unchecked Sendable {
     let rowCardIDs: [Int]
     let vecs: [Float]
 
-    public init(path: String, projectID: String, dim: Int = 384, minScore: Float = 0.88, minMargin: Float = 0.02) throws {
+    public init(path: String, projectID: String, dim: Int = 384, minScore: Float = 0.90, minMargin: Float = 0.02) throws {
         let db = try SQLiteDB(path: path)
         self.dim = dim
         self.minScore = minScore
