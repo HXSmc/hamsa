@@ -32,6 +32,10 @@ erDiagram
 
 Excluded from indexing always: `Secrets/`, any file with `secret|password|token` in path, `.bak*`.
 
+**chunk_questions** — `id INTEGER PK`, `chunk_id INTEGER FK→chunks ON DELETE CASCADE`, `q TEXT NOT NULL`, `lang TEXT`,
+`embedding BLOB NOT NULL` (384 × float32, prefix `query: `). Written offline by Claude (doc2query, ADR 004); the
+Mac loads them with `chunk_vectors`. **chunk_questions_done** — `chunk_id PK`: chunks already sent to Claude.
+
 ## cards.sqlite (brain → Mac)
 **cards** — `id INTEGER PK`, `project_id TEXT FK`, `question_en TEXT NOT NULL`, `question_ar TEXT NOT NULL`,
 `paraphrases TEXT NOT NULL` (JSON list, 3–6, both languages), `answer_en TEXT NOT NULL` (≤ 3 lines),

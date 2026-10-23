@@ -18,7 +18,7 @@ upgrades it in place.
 | Tier | What | Where | Target latency after question end | Source |
 |---|---|---|---|---|
 | **T0 Predicted card** | Q→A card made before the call; matched on the *partial* transcript, so it often shows **before the question ends** | Mac, in-memory | ≤ 100 ms after a partial matches | pre-meeting job |
-| **T1 Snippet** | Best paragraph from vault/docs (hybrid BM25 + vector), key line highlighted | Mac, local SQLite | ≤ 150 ms | local index |
+| **T1 Snippet** | Best paragraph from vault/docs (hybrid: BM25 + chunk vectors + Claude-written questions per chunk, ADR 004), key line highlighted | Mac, local SQLite | ≤ 150 ms | local index |
 | **T2 Generated** | Short answer written from T1 chunks, streamed token by token, in the speaker's language/dialect | Groq free tier (fallback chain below) | first token ≤ 1.5 s after question end (API TTFT ≤ 600 ms) | LLM API |
 | **T3 Improved** | After the call: real questions + better answers become new cards | Mini PC, `claude -p` | no limit | learning loop |
 
