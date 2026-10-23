@@ -11,4 +11,9 @@ Test data for the acceptance commands in `docs/kickoff/07-engineering-plan.md`.
 Audio, labels and the `*.jsonl` sets are never committed (see `.gitignore`): they hold other people's voices
 and facts from private project docs. The repo is public; keep that data local.
 
+- Labels format: ONE definition, `CallLabels` in `mac/Sources/HamsaKit/STT/CallLabels.swift` (items: `channel` them/me,
+  `start`/`end` s, `text`, `is_question`, `tech`, `verbatim`, optional `lang`; `audio` maps channel → wav).
+- `make-synth-call.sh` → `calls/call-01.wav` (THEM, 20 ar clips) + `call-01.me.wav` (ME, 10 en clips) + `call-01.labels.json`:
+  PROVISIONAL replay call for T08 built from `synth/` (run `make-synth-set.sh` first). Item `end` = TTS clip end (includes the
+  voice's trailing silence), so `question_end_lag_ms` reads low.
 - `make-synth-set.sh` → `synth/{ar,en}/NN.wav|txt`: PROVISIONAL TTS set for T02 until `ar-sa/` (T02a) exists. Only the `.txt` refs are committed.

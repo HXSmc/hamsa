@@ -37,6 +37,9 @@ public final class SQLiteDB: @unchecked Sendable {
             switch b {
             case let s as String: sqlite3_bind_text(st, Int32(i + 1), s, -1, transient)
             case let n as Int: sqlite3_bind_int64(st, Int32(i + 1), Int64(n))
+            case let n as Int64: sqlite3_bind_int64(st, Int32(i + 1), n)
+            case let b as Bool: sqlite3_bind_int64(st, Int32(i + 1), b ? 1 : 0)
+            case let x as Double: sqlite3_bind_double(st, Int32(i + 1), x)
             case let d as Data: _ = d.withUnsafeBytes { sqlite3_bind_blob(st, Int32(i + 1), $0.baseAddress, Int32(d.count), transient) }
             default: sqlite3_bind_null(st, Int32(i + 1))
             }
@@ -48,6 +51,9 @@ public final class SQLiteDB: @unchecked Sendable {
             try row(Row(st: st))
         }
     }
+
+    /// Rowid of the last INSERT on this connection.
+    public var lastInsertRowID: Int { Int(sqlite3_last_insert_rowid(handle)) }
 
     public struct Row {
         let st: OpaquePointer
