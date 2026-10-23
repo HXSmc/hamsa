@@ -94,3 +94,6 @@ The owner also gave two standing rules today. Both are now in `~/.claude/CLAUDE.
 ### 4. Undo
 - Restore the `CLAUDE.md` backup.
 - Remove the stored key with `security delete-generic-password -s hamsa -a gemini`.
+
+## Owner instruction 2026-10-23 03:00
+Keep this session card in "attention needed" (an open card ask) until the owner has installed Xcode AND the app is finished. Re-post a card ask after every answer until then.
