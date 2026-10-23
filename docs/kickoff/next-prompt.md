@@ -41,6 +41,7 @@ Later mini-PC tasks wait on recorded calls: T06a (predictability) and T09 thresh
 - 2026-10-23 · T07 brain API live as systemd user service on the Tailscale IP, port 8770 (401 without token) · 2b0b8e0..
 - 2026-10-23 · T07b BrainSync + `hamsa-cli sync` (verified against live brain: updated → notModified) · 9b42f75
 - 2026-10-23 · T09 rules, T10a LocalIndex (parity with brain top-5 0.99, 5 ms), T10b CardMatcher, T11 AnswerLLM · 5ca804a..
+- 2026-10-23 · T00 Mac env check (ADR 000) · 696ca78 — BLOCKED: no Xcode (CLT only, SDK 13.3, Swift 5.8.1); swap 6.6 GB; Steps 2-4 not started
 - 2026-10-23 · T14 summarizer, T15a learning loop (code + tests) · dd1d6eb..
 - 2026-10-23 · T14 acceptance: 60-min synthetic bilingual call (738 lines) summarized in 34.7 s, all 4 sections
 - 2026-10-23 · T05 gate PASSED on Claude-judged recall@5 = 0.875 (en 1.00, ar 0.75); strict 0.475 (ADR 004)
