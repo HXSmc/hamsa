@@ -4,7 +4,7 @@ Output (git-ignored, ~240 MB, regenerate instead of committing):
   mac/Models/e5-small/E5Small.mlmodelc   compiled model, fp16, ANE-friendly
   mac/Models/e5-small/tokenizer.json, tokenizer_config.json, config.json   XLM-R SentencePiece (Unigram) tokenizer
 
-Regenerate (macOS, ~2 GB RAM, ~5 min):
+Regenerate (macOS, peak ~3.5 GB RAM, ~5 min):
   uv venv -p 3.12 /tmp/e5venv
   VIRTUAL_ENV=/tmp/e5venv uv pip install "coremltools==9.0" "torch==2.7.0" "transformers<5" numpy huggingface_hub
   /tmp/e5venv/bin/python mac/Models/convert_e5.py
