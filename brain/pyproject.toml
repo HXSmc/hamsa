@@ -21,6 +21,7 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tests"]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"

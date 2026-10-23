@@ -27,6 +27,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--k", type=int, default=5)
     s.add_argument("query")
 
+    cd = sub.add_parser("cards", help="prepared answers").add_subparsers(dest="action", required=True)
+    cb = cd.add_parser("build", help="predict questions + write sourced bilingual cards (Claude)")
+    cb.add_argument("--project", required=True)
+    cb.add_argument("--agenda", default="")
+    cs = cd.add_parser("stats")
+    cs.add_argument("--project", required=True)
+
     ev = sub.add_parser("eval", help="quality checks").add_subparsers(dest="action", required=True)
     e = ev.add_parser("retrieval", help="recall@k on a gold jsonl")
     e.add_argument("--set", required=True, type=Path)
@@ -68,6 +75,16 @@ def main(argv: list[str] | None = None) -> int:
         t = time.time()
         stats = refresh(projects[args.project], db, E5Embedder(), DATA_DIR / "index" / "pii-report.txt", force=args.force)
         print(json.dumps({**stats, "seconds": round(time.time() - t, 1)}))
+    elif args.cmd == "cards":
+        from hamsa_brain.cards.build import build, open_cards, stats
+
+        cdb = open_cards(DATA_DIR / "cards.sqlite")
+        if args.action == "build":
+            name = load_projects()[args.project].name
+            t = time.time()
+            res = build(db, cdb, args.project, name, args.agenda, E5Embedder())
+            print(json.dumps({**res, "seconds": round(time.time() - t, 1)}))
+        print(" ".join(f"{k}={v}" for k, v in stats(cdb, args.project).items()))
     elif args.cmd == "search":
         emb = E5Embedder()
         for h in store.search(db, args.project, args.query, emb.query(args.query), k=args.k):
