@@ -6,8 +6,10 @@ import time
 from importlib.resources import files
 from pathlib import Path
 
+import numpy as np
 import sqlite_vec
 
+from hamsa_brain.index.chunk import detect_lang
 from hamsa_brain.index.embed import DIM
 
 RRF_K = 60
@@ -24,7 +26,7 @@ def open_index(path: Path | str) -> sqlite3.Connection:
     db.enable_load_extension(False)
     db.execute("PRAGMA foreign_keys = ON")
     schema = files("hamsa_brain.schema")
-    for name in ("001_init.sql", "002_index.sql"):
+    for name in ("001_init.sql", "002_index.sql", "003_questions.sql"):
         db.executescript(schema.joinpath(name).read_text())
     db.execute(f"CREATE VIRTUAL TABLE IF NOT EXISTS chunks_vec USING vec0(embedding float[{DIM}])")
     return db
@@ -68,6 +70,22 @@ def write_source(db, pid: str, path: str, sha: str, mtime: int, chunks, vectors)
         db.execute("INSERT INTO chunk_vectors(chunk_id, embedding) VALUES (?,?)", (cid, blob))
 
 
+def write_questions(db, chunk_id: int, qs: list[str], vecs) -> None:
+    db.executemany(
+        "INSERT INTO chunk_questions(chunk_id, q, lang, embedding) VALUES (?,?,?,?)",
+        [(chunk_id, q, detect_lang(q), pack(v)) for q, v in zip(qs, vecs, strict=True)],
+    )
+
+
+def _question_matrix(db, pid: str):
+    rows = db.execute(
+        "SELECT q.chunk_id, q.embedding FROM chunk_questions q JOIN chunks c ON c.id=q.chunk_id "
+        "JOIN sources s ON s.id=c.source_id WHERE s.project_id=?", (pid,)).fetchall()
+    if not rows:
+        return None, None
+    return np.array([r[0] for r in rows]), np.frombuffer(b"".join(r[1] for r in rows), dtype=np.float32).reshape(len(rows), DIM)
+
+
 def _fts_query(q: str) -> str:
     # OR of quoted tokens: BM25 still ranks chunks matching more terms higher.
     toks = [t for t in "".join(c if c.isalnum() else " " for c in q).split() if len(t) > 1]
@@ -98,6 +116,18 @@ def search(db, pid: str, q: str, qvec: list[float], k: int = 5, pool: int = 30) 
     }
     for r, cid in enumerate([c for (c,) in knn if c in in_project][:pool]):
         ranks[cid] = ranks.get(cid, 0) + 1 / (RRF_K + r)
+    # doc2query: nearest generated questions, best rank per chunk.
+    qids, qmat = _question_matrix(db, pid)
+    if qmat is not None:
+        seen: list[int] = []
+        for i in np.argsort(-(qmat @ np.asarray(qvec, dtype=np.float32))):
+            cid = int(qids[i])
+            if cid not in seen:
+                seen.append(cid)
+            if len(seen) == pool:
+                break
+        for r, cid in enumerate(seen):
+            ranks[cid] = ranks.get(cid, 0) + 1 / (RRF_K + r)
     top = sorted(ranks, key=ranks.get, reverse=True)[:k]
     out = []
     for cid in top:

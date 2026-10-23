@@ -17,6 +17,10 @@ def build_parser() -> argparse.ArgumentParser:
     r = idx.add_parser("refresh", help="re-index changed files of a project")
     r.add_argument("--project", required=True)
     r.add_argument("--force", action="store_true", help="re-index every file (after chunk/redact changes)")
+    dq = idx.add_parser("questions", help="Claude writes the questions each chunk answers (doc2query)")
+    dq.add_argument("--project", required=True)
+    dq.add_argument("--model", default="haiku")
+    dq.add_argument("--workers", type=int, default=4)
 
     s = sub.add_parser("search", help="hybrid search (debug)")
     s.add_argument("--project", required=True)
@@ -28,6 +32,9 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--set", required=True, type=Path)
     e.add_argument("--project", default="taweed")
     e.add_argument("--k", type=int, default=5)
+    mo = ev.add_parser("models", help="embedding-model shootout on the gold set")
+    mo.add_argument("--set", required=True, type=Path)
+    mo.add_argument("--models", nargs="+", default=None)
     return p
 
 
@@ -49,6 +56,13 @@ def main(argv: list[str] | None = None) -> int:
         projects = load_projects()
         if args.project not in projects:
             sys.exit(f"unknown project {args.project!r}; known: {', '.join(projects)}")
+        if args.action == "questions":
+            from hamsa_brain.index.doc2query import generate
+
+            t = time.time()
+            stats = generate(db, args.project, E5Embedder(), args.model, args.workers)
+            print(json.dumps({**stats, "seconds": round(time.time() - t, 1)}))
+            return 0
         from hamsa_brain.index.refresh import refresh
 
         t = time.time()
@@ -59,6 +73,11 @@ def main(argv: list[str] | None = None) -> int:
         for h in store.search(db, args.project, args.query, emb.query(args.query), k=args.k):
             print(f"{h['score']:.4f}  {Path(h['path']).name}  [{h['heading']}]\n        {h['text'][:160]!r}")
     elif args.cmd == "eval":
+        if args.action == "models":
+            from hamsa_brain.eval.models import MODELS, shootout
+
+            shootout(db, args.set, args.models or list(MODELS))
+            return 0
         from hamsa_brain.eval.retrieval import recall_at_k
 
         res = recall_at_k(db, E5Embedder(), args.project, args.set, args.k)

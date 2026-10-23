@@ -21,3 +21,7 @@ class E5Embedder:
 
     def query(self, text: str) -> list[float]:
         return self.m.encode(f"query: {text}", normalize_embeddings=True).tolist()
+
+    def passages_as_queries(self, texts: list[str]) -> list[list[float]]:
+        """Generated questions are matched question-to-question, so they get the query prefix too."""
+        return self.m.encode([f"query: {t}" for t in texts], normalize_embeddings=True, batch_size=64).tolist()

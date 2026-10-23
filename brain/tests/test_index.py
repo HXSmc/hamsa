@@ -91,3 +91,27 @@ def test_search_and_recall(tmp_path):
     )
     res = recall_at_k(db, emb, "taweed", gold, k=5)
     assert res["recall@5"] == 1.0 and res["n"] == 2
+
+
+def test_doc2query_questions_rank_their_chunk(tmp_path, monkeypatch):
+    from hamsa_brain.index import doc2query
+    from hamsa_brain.index.doc2query import generate
+
+    monkeypatch.setattr(doc2query, "MIN_CHARS", 0)  # fixture chunks are short
+
+    v = make_vault(tmp_path)
+    db = store.open_index(tmp_path / "index.sqlite")
+    emb = FakeEmbedder()
+    emb.passages_as_queries = emb.passages
+    refresh(project(v), db, emb, tmp_path / "pii.txt")
+    target = db.execute("SELECT id FROM chunks WHERE text LIKE '%ريال%'").fetchone()[0]
+
+    def fake_claude(prompt, model):
+        assert f"\n[{target}] (" in "\n" + prompt.split("Passages:\n", 1)[1]
+        return json.dumps({str(target): ["بكم تبيعون المطالبة؟", "how much per claim"]})
+
+    stats = generate(db, "taweed", emb, ask=fake_claude, workers=1)
+    assert stats["questions"] == 2 and stats["failed_batches"] == 0
+    assert generate(db, "taweed", emb, ask=fake_claude)["chunks"] == 0  # all done, nothing re-sent
+    hits = store.search(db, "taweed", "بكم تبيعون المطالبة", emb.query("بكم تبيعون المطالبة"))
+    assert hits[0]["chunk_id"] == target
