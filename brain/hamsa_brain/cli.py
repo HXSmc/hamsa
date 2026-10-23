@@ -35,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
     cs.add_argument("--project", required=True)
 
     sv = sub.add_parser("serve", help="run the brain API (binds to the Tailscale IP only)")
-    sv.add_argument("--port", type=int, default=8765)
+    sv.add_argument("--port", type=int, default=8770)
 
     ev = sub.add_parser("eval", help="quality checks").add_subparsers(dest="action", required=True)
     e = ev.add_parser("retrieval", help="recall@k on a gold jsonl")
