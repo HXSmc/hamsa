@@ -20,13 +20,13 @@
    gated items to the project vault note ## Blockers (dashboard rule), and stop.
 
 ## Next step
-**T05 [mini] Indexer** — `brain/hamsa_brain/index/`, `brain/hamsa_brain/schema/` (see 07-engineering-plan T05).
-Index the Taweed project (vault `Projects/Taweed*.md`, `Projects/Taweed/`, private repo `docs/`) into
-`index.sqlite`: sources, chunks (≤ 800 chars, heading-aware), FTS5, `chunks_vec` + `chunk_vectors`
-(`intfloat/multilingual-e5-small`, prefix `passage: `). Skip `Secrets/` and `*.bak*`; redact national-ID /
-phone / IBAN patterns into `index/pii-report.txt`. Gold set `bench/questions.jsonl` (40 Q: 20 ar-sa,
-20 en) stays local (gitignored; repo is public).
-Acceptance: `uv run hamsa-brain index refresh --project taweed && uv run hamsa-brain eval retrieval --set ../bench/questions.jsonl` → `recall@5>=0.80`; pytest: no `Secrets/` path indexed, no raw PII match in `chunks`.
+**T05 gate (in progress)** — finish doc2query for Taweed (`uv run hamsa-brain index questions --project taweed`,
+re-runnable), then `uv run hamsa-brain eval retrieval --set ../bench/questions.jsonl` → `recall@5>=0.80`.
+If it stays below: next lever is per-language question vectors and dropping question-shaped docs
+(sales scripts, open-question lists) from T1; see docs/adr/004-retrieval.md.
+After the gate: T06 real build (`hamsa-brain cards build --project taweed`) → `cards>=50 bilingual=100% sources=100%`.
+Mac-session tasks waiting for the Mac (T00, T02–T04b, T05b, T08, T11b–T13) — code that does not need macOS
+(T07b sync, T09 rules, T10a/b, T11 client) is already in and CI-tested on macOS.
 
 ## Founder-gated (waiting on user)
 - [ ] T02a: record 5 calls (headphones; paste consent line, or staged calls) + 20 clips, label with `bench-label` (by 2026-11-03) #urgent
@@ -36,4 +36,11 @@ Acceptance: `uv run hamsa-brain index refresh --project taweed && uv run hamsa-b
 
 ## Done log
 - 2026-10-22 · kickoff docs drafted · b4ca53d..f7bd939
-- 2026-10-23 · T01 scaffold (swift build + test pass on Linux swift 6.4.1; brain pytest 1 passed; CI added) · see next commit
+- 2026-10-23 · T01 scaffold (swift build/test Linux + macOS CI; brain pytest) · 59edfbd
+- 2026-10-23 · T05 indexer (68 files, 3,044 chunks, PII redaction) · 02595db — gate NOT met yet (recall 0.175)
+- 2026-10-23 · ADR 004 doc2query (Claude-written questions per chunk) · 51be998
+- 2026-10-23 · T06 card builder code (tests pass; real build waits for T05 gate) · ec56950
+- 2026-10-23 · T07 brain API live as systemd user service on the Tailscale IP, port 8770 (401 without token) · 2b0b8e0..
+- 2026-10-23 · T07b BrainSync + `hamsa-cli sync` (verified against live brain: updated → notModified) · 9b42f75
+- 2026-10-23 · T09 rules, T10a LocalIndex (parity with brain top-5 0.99, 5 ms), T10b CardMatcher, T11 AnswerLLM · 5ca804a..
+- 2026-10-23 · T14 summarizer, T15a learning loop (code + tests) · dd1d6eb..
