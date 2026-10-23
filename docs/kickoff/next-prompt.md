@@ -49,3 +49,4 @@ Later mini-PC tasks wait on recorded calls: T06a (predictability) and T09 thresh
 - 2026-10-23 · CardMatcher default threshold 0.90 / margin 0.02 from 40 gold Qs vs 66 cards
 - 2026-10-23 · Mac session Step 0: 'Keep contact between sessions' appended to ~/.claude/CLAUDE.md (backup .bak-2026-10-23-contact) · Xcode 27.1 installed, waiting on owner licence accept · swap 8.2/9.2 GB > 6 GB stop line — builds wait until RAM freed
 - 2026-10-23 · T00 Mac env re-check: Xcode 27.1, Swift 6.4, SDK 27.0, 0 signing ids (ADR 000) · BLOCKED on RAM: swap 7.9 GB > 6 GB stop line; SpeechTranscriber ar_SA + Steps 2-4 + T03 held; T03/T04/T04b code drafted locally, not compiled
+- 2026-10-23 · T00 SpeechTranscriber check: no ar_SA (30 locales); DictationTranscriber lists ar_SA (ADR 000) · swap line relaxed by parent
