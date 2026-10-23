@@ -1,3 +1,4 @@
+#if os(macOS)
 import AVFoundation
 import Foundation
 
@@ -82,6 +83,12 @@ public final class WavWriter: @unchecked Sendable {
     }
 
     /// RMS over all written samples in dBFS; silence or nothing written gives -120.
+    /// Length of the written file, padding included; should match the capture time on both channels.
+    public var seconds: Double {
+        lock.lock(); defer { lock.unlock() }
+        return Double(written) / Self.outFormat.sampleRate
+    }
+
     public var rmsDbfs: Double {
         lock.lock(); defer { lock.unlock() }
         guard samples > 0, sumSquares > 0 else { return -120 }
@@ -112,3 +119,4 @@ public final class WavWriter: @unchecked Sendable {
         file = nil
     }
 }
+#endif

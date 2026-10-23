@@ -8,6 +8,12 @@ struct HamsaCLI: AsyncParsableCommand {
         commandName: "hamsa-cli",
         abstract: "Hamsa developer CLI.",
         version: Hamsa.version,
-        subcommands: [Sync.self, Capture.self, PanelTest.self]
+        subcommands: [Sync.self] + macOnly
     )
 }
+
+#if os(macOS)
+private let macOnly: [ParsableCommand.Type] = [Capture.self, PanelTest.self]
+#else
+private let macOnly: [ParsableCommand.Type] = []
+#endif

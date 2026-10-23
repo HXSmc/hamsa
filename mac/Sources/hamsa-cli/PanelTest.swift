@@ -1,3 +1,4 @@
+#if os(macOS)
 import AppKit
 import ArgumentParser
 import Foundation
@@ -45,3 +46,4 @@ struct PanelTest: AsyncParsableCommand {
         panel.close()
     }
 }
+#endif

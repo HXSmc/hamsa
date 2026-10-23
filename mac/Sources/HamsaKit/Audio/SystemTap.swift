@@ -1,3 +1,4 @@
+#if os(macOS)
 import AVFoundation
 import AudioToolbox
 import CoreAudio
@@ -99,3 +100,4 @@ public final class SystemTap: @unchecked Sendable {
         return asbd
     }
 }
+#endif

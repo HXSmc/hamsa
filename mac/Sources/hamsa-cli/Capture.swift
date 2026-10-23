@@ -1,3 +1,4 @@
+#if os(macOS)
 import ArgumentParser
 import Foundation
 import HamsaKit
@@ -33,10 +34,11 @@ struct Capture: AsyncParsableCommand {
         stopTap()
         mic.stop()
         them.finish(); me.finish()
-        print(String(format: "them.wav rms_dbfs=%.1f", them.rmsDbfs))
-        print(String(format: "me.wav rms_dbfs=%.1f", me.rmsDbfs))
+        print(String(format: "them.wav rms_dbfs=%.1f seconds=%.2f", them.rmsDbfs, them.seconds))
+        print(String(format: "me.wav rms_dbfs=%.1f seconds=%.2f", me.rmsDbfs, me.seconds))
         for (n, w) in [("them", them), ("me", me)] { if let e = w.firstError { print("WARN: \(n) write: \(e)") } }
         if failed { throw ExitCode.failure }
     }
 }
 
+#endif

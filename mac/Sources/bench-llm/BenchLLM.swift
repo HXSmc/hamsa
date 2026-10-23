@@ -1,3 +1,4 @@
+#if canImport(Darwin)
 import ArgumentParser
 import Foundation
 import HamsaKit
@@ -150,3 +151,9 @@ struct BenchLLM: AsyncParsableCommand {
     }
 }
 
+#else
+@main
+struct BenchLLM {
+    static func main() { print("bench-llm: macOS only (streams via URLSession.bytes)") }
+}
+#endif

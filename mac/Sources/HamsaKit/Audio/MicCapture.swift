@@ -1,3 +1,4 @@
+#if os(macOS)
 import AVFoundation
 import Foundation
 
@@ -33,3 +34,4 @@ public final class MicCapture: @unchecked Sendable {
         engine.stop()
     }
 }
+#endif
