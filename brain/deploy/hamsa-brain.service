@@ -1,0 +1,16 @@
+# Runs from a durable clone at ~/work/hamsa (not a session worktree).
+# Install: cp deploy/hamsa-brain.service ~/.config/systemd/user/ && systemctl --user daemon-reload
+#          && systemctl --user enable --now hamsa-brain
+[Unit]
+Description=Hamsa brain API (Tailscale only)
+After=network-online.target tailscaled.service
+
+[Service]
+WorkingDirectory=%h/work/hamsa/brain
+ExecStart=%h/.local/bin/uv run hamsa-brain serve
+Restart=on-failure
+RestartSec=10
+Nice=5
+
+[Install]
+WantedBy=default.target

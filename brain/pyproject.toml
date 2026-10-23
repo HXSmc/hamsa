@@ -1,0 +1,34 @@
+[project]
+name = "hamsa-brain"
+version = "0.0.1"
+description = "Hamsa offline brain: indexing, answer cards, summaries (runs on the mini PC)."
+requires-python = ">=3.12"
+dependencies = [
+    "sqlite-vec>=0.1.6",
+    "sentence-transformers>=3",
+    "torch>=2.4",
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
+]
+
+[project.scripts]
+hamsa-brain = "hamsa_brain.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "httpx>=0.27"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }

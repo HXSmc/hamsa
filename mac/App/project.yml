@@ -1,0 +1,23 @@
+# XcodeGen spec for Hamsa.app (menu-bar app). Run on the Mac: `cd mac/App && xcodegen`.
+name: Hamsa
+options:
+  bundleIdPrefix: com.hamsa
+  deploymentTarget:
+    macOS: "14.4"
+packages:
+  Hamsa:
+    path: ..
+targets:
+  Hamsa:
+    type: application
+    platform: macOS
+    sources: [Sources]
+    dependencies:
+      - package: Hamsa
+        product: HamsaKit
+    info:
+      path: Sources/Info.plist
+      properties:
+        LSUIElement: true
+        NSMicrophoneUsageDescription: Hamsa transcribes your side of the call.
+        NSAudioCaptureUsageDescription: Hamsa transcribes the other side of the call.

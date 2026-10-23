@@ -1,2 +1,6 @@
 .claude/worktrees/
 generated-images/
+.venv/
+__pycache__/
+*.sqlite
+.DS_Store

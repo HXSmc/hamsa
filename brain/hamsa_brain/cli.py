@@ -1,0 +1,150 @@
+"""`hamsa-brain` entry point. Each task adds its subcommand (index, cards, eval, summarize, learn, serve)."""
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+
+from hamsa_brain import __version__
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="hamsa-brain")
+    p.add_argument("--version", action="version", version=f"hamsa-brain {__version__}")
+    sub = p.add_subparsers(dest="cmd")
+
+    idx = sub.add_parser("index", help="build / update index.sqlite").add_subparsers(dest="action", required=True)
+    r = idx.add_parser("refresh", help="re-index changed files of a project")
+    r.add_argument("--project", required=True)
+    r.add_argument("--force", action="store_true", help="re-index every file (after chunk/redact changes)")
+    dq = idx.add_parser("questions", help="Claude writes the questions each chunk answers (doc2query)")
+    dq.add_argument("--project", required=True)
+    dq.add_argument("--model", default="haiku")
+    dq.add_argument("--workers", type=int, default=4)
+
+    s = sub.add_parser("search", help="hybrid search (debug)")
+    s.add_argument("--project", required=True)
+    s.add_argument("--k", type=int, default=5)
+    s.add_argument("query")
+
+    cd = sub.add_parser("cards", help="prepared answers").add_subparsers(dest="action", required=True)
+    cb = cd.add_parser("build", help="predict questions + write sourced bilingual cards (Claude)")
+    cb.add_argument("--project", required=True)
+    cb.add_argument("--agenda", default="")
+    cs = cd.add_parser("stats")
+    cs.add_argument("--project", required=True)
+
+    sm = sub.add_parser("summarize", help="write the post-call vault note (Claude)")
+    src = sm.add_mutually_exclusive_group(required=True)
+    src.add_argument("--meeting", help="meeting id in --live-db")
+    src.add_argument("--transcript", type=Path, help="text file, one '[mm:ss] ME|THEM: text' line per segment")
+    sm.add_argument("--live-db", type=Path)
+    sm.add_argument("--title", default="Call")
+    sm.add_argument("--out", type=Path, help="folder (default: vault Meetings/)")
+
+    sv = sub.add_parser("serve", help="run the brain API (binds to the Tailscale IP only)")
+    sv.add_argument("--port", type=int, default=8770)
+
+    ev = sub.add_parser("eval", help="quality checks").add_subparsers(dest="action", required=True)
+    e = ev.add_parser("retrieval", help="recall@k on a gold jsonl")
+    e.add_argument("--set", required=True, type=Path)
+    e.add_argument("--project", default="taweed")
+    e.add_argument("--k", type=int, default=5)
+    e.add_argument("--judge", action="store_true", help="also ask Claude whether the top-k actually answer")
+    mo = ev.add_parser("models", help="embedding-model shootout on the gold set")
+    mo.add_argument("--set", required=True, type=Path)
+    mo.add_argument("--models", nargs="+", default=None)
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.cmd is None:
+        parser.print_help()
+        return 0
+
+    if args.cmd == "summarize":
+        import re as _re
+
+        from hamsa_brain.summarize.note import VAULT_MEETINGS, Meeting, load_meeting, summarize
+
+        if args.meeting:
+            m = load_meeting(args.live_db, args.meeting)
+        else:
+            segs = []
+            for line in args.transcript.read_text().splitlines():
+                mt = _re.match(r"\[(\d+):(\d\d)\]\s*(ME|THEM):\s*(.*)", line)
+                if mt:
+                    segs.append((mt[3].lower(), (int(mt[1]) * 60 + int(mt[2])) * 1000, mt[4]))
+            m = Meeting("file", args.title, None, int(time.time()), False, True, segs)
+        t = time.time()
+        path = summarize(m, args.out or VAULT_MEETINGS)
+        print(json.dumps({"note": str(path) if path else None, "segments": len(m.segments), "seconds": round(time.time() - t, 1)}))
+        return 0
+
+    if args.cmd == "serve":
+        import subprocess
+
+        import uvicorn
+
+        from hamsa_brain.api.app import create_app, default_runner, load_or_create_token
+
+        host = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True, check=True).stdout.split()[0]
+        uvicorn.run(create_app(load_or_create_token(), default_runner), host=host, port=args.port, log_level="warning")
+        return 0
+
+    from hamsa_brain.config import DATA_DIR, index_path, load_projects
+    from hamsa_brain.index import store
+    from hamsa_brain.index.embed import E5Embedder
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    db = store.open_index(index_path())
+
+    if args.cmd == "index":
+        projects = load_projects()
+        if args.project not in projects:
+            sys.exit(f"unknown project {args.project!r}; known: {', '.join(projects)}")
+        if args.action == "questions":
+            from hamsa_brain.index.doc2query import generate
+
+            t = time.time()
+            stats = generate(db, args.project, E5Embedder(), args.model, args.workers)
+            print(json.dumps({**stats, "seconds": round(time.time() - t, 1)}))
+            return 0
+        from hamsa_brain.index.refresh import refresh
+
+        t = time.time()
+        stats = refresh(projects[args.project], db, E5Embedder(), DATA_DIR / "index" / "pii-report.txt", force=args.force)
+        print(json.dumps({**stats, "seconds": round(time.time() - t, 1)}))
+    elif args.cmd == "cards":
+        from hamsa_brain.cards.build import build, open_cards, stats
+
+        cdb = open_cards(DATA_DIR / "cards.sqlite")
+        if args.action == "build":
+            name = load_projects()[args.project].name
+            t = time.time()
+            res = build(db, cdb, args.project, name, args.agenda, E5Embedder())
+            print(json.dumps({**res, "seconds": round(time.time() - t, 1)}))
+        print(" ".join(f"{k}={v}" for k, v in stats(cdb, args.project).items()))
+    elif args.cmd == "search":
+        emb = E5Embedder()
+        for h in store.search(db, args.project, args.query, emb.query(args.query), k=args.k):
+            print(f"{h['score']:.4f}  {Path(h['path']).name}  [{h['heading']}]\n        {h['text'][:160]!r}")
+    elif args.cmd == "eval":
+        if args.action == "models":
+            from hamsa_brain.eval.models import MODELS, shootout
+
+            shootout(db, args.set, args.models or list(MODELS))
+            return 0
+        from hamsa_brain.eval.retrieval import recall_at_k
+
+        res = recall_at_k(db, E5Embedder(), args.project, args.set, args.k)
+        for m in res.pop("misses"):
+            print(f"MISS {m['q']}  -> {m['got']}", file=sys.stderr)
+        print(" ".join(f"{k}={v}" for k, v in res.items()))
+        if args.judge:
+            from hamsa_brain.eval.retrieval import judged_recall
+
+            print(" ".join(f"{k}={v}" for k, v in judged_recall(db, E5Embedder(), args.project, args.set, args.k).items()))
+    return 0
