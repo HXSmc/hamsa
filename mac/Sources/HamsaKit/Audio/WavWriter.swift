@@ -95,6 +95,9 @@ public final class WavWriter: @unchecked Sendable {
         return max(-120, 20 * log10((sumSquares / Double(samples)).squareRoot()))
     }
 
+    /// Seconds since this writer was created: the file's timeline (padding keeps the file on it).
+    public var elapsed: Double { Double(elapsedFrames()) / Self.outFormat.sampleRate }
+
     private func elapsedFrames() -> Int {
         let c = (ContinuousClock.now - started).components
         return Int((Double(c.seconds) + Double(c.attoseconds) / 1e18) * Self.outFormat.sampleRate)

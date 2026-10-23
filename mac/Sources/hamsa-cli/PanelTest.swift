@@ -26,19 +26,7 @@ struct PanelTest: AsyncParsableCommand {
         stack.alignment = .leading
         stack.edgeInsets = NSEdgeInsets(top: 12, left: 16, bottom: 12, right: 16)
 
-        let size = NSSize(width: 320, height: 110)
-        let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
-                            styleMask: [.nonactivatingPanel, .titled], backing: .buffered, defer: false)
-        panel.title = "Hamsa panel-test"
-        panel.contentView = stack
-        panel.level = .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.sharingType = .none
-        panel.hidesOnDeactivate = false
-        panel.isReleasedWhenClosed = false
-        if let area = NSScreen.main?.visibleFrame {
-            panel.setFrameOrigin(NSPoint(x: area.maxX - size.width - 20, y: area.maxY - size.height - 20))
-        }
+        let panel = OverlayPanel.make(title: "Hamsa panel-test", size: NSSize(width: 320, height: 110), content: stack)
         panel.orderFrontRegardless()
         print("PANEL_SHOWN sharingType=none seconds=\(seconds)")
 

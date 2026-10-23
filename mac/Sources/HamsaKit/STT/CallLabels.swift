@@ -13,6 +13,7 @@ import Foundation
 ///   `end` of a question = `t_question_end_ms / 1000` (last voiced frame).
 /// - `verbatim`: true = exact ground truth from a script (TTS, rehearsal); false = needs human labelling.
 /// - `lang` is optional (`ar` / `en`).
+/// - `cue` is optional: the topic cue shown for an own-words `rehearse` turn (`verbatim: false`, `text` empty until labelled).
 public struct CallLabels: Codable, Sendable, Equatable {
     public var audio: [String: String]
     public var provisional: Bool
@@ -27,16 +28,18 @@ public struct CallLabels: Codable, Sendable, Equatable {
         public var tech: Bool
         public var verbatim: Bool
         public var lang: String?
+        public var cue: String?
 
         enum CodingKeys: String, CodingKey {
-            case channel, start, end, text, tech, verbatim, lang
+            case channel, start, end, text, tech, verbatim, lang, cue
             case isQuestion = "is_question"
         }
 
         public init(channel: String, start: Double, end: Double, text: String, isQuestion: Bool,
-                    tech: Bool = false, verbatim: Bool, lang: String? = nil) {
+                    tech: Bool = false, verbatim: Bool, lang: String? = nil, cue: String? = nil) {
             self.channel = channel; self.start = start; self.end = end; self.text = text
             self.isQuestion = isQuestion; self.tech = tech; self.verbatim = verbatim; self.lang = lang
+            self.cue = cue
         }
     }
 

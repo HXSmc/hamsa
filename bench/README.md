@@ -16,4 +16,7 @@ and facts from private project docs. The repo is public; keep that data local.
 - `make-synth-call.sh` → `calls/call-01.wav` (THEM, 20 ar clips) + `call-01.me.wav` (ME, 10 en clips) + `call-01.labels.json`:
   PROVISIONAL replay call for T08 built from `synth/` (run `make-synth-set.sh` first). Item `end` = TTS clip end (includes the
   voice's trailing silence), so `question_end_lag_ms` reads low.
+- `scripts/call-NN.jsonl` (private, never committed) → `hamsa-cli rehearse --script ../bench/scripts/call-NN.jsonl --out ../bench/calls`
+  (run from `mac/`): mock call; `say` plays each question, a share-hidden panel shows the answer (verbatim) or a topic cue
+  (own words, `verbatim: false`, `text` empty + `cue` set: label later). Writes `call-NN.wav` / `.me.wav` / `.labels.json`.
 - `make-synth-set.sh` → `synth/{ar,en}/NN.wav|txt`: PROVISIONAL TTS set for T02 until `ar-sa/` (T02a) exists. Only the `.txt` refs are committed.
