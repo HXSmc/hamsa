@@ -97,3 +97,14 @@ The owner also gave two standing rules today. Both are now in `~/.claude/CLAUDE.
 
 ## Owner instruction 2026-10-23 03:00
 Keep this session card in "attention needed" (an open card ask) until the owner has installed Xcode AND the app is finished. Re-post a card ask after every answer until then.
+
+## UPDATE 2026-10-23 16:45 — owner says Xcode is INSTALLED (tapped Yes on the card)
+Do next, in this order (owner approved; do clicks yourself via jarvis-screen, ask only if impossible):
+1. `jarvis-sessions` + fresh `jarvis-screen frame`. At 16:44 all 5 Mac hubs showed "active" (owner's tabs busy) — never touch tabs 1-6; use only iTerm tab 7 "Mac session brief" (or open a new tab with the "+" button if tab 7 is gone).
+2. In tab 7 type: `Xcode installed, rerun the brief from Step 1. Before Step 1 run: sudo -n true || echo NEEDS_SUDO; xcode-select -p` .
+   If xcode-select still points at CommandLineTools, the owner's password is needed for `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` → ask on the card (that is owner-only).
+3. Click Allow on Microphone / System Audio pop-ups via jarvis-screen.
+4. Groq key: Chrome (normal window, not the "automated test software" one) → https://console.groq.com/keys → Continue with Google (i0562269690@gmail.com) → Create API Key → copy → tab 7: `security add-generic-password -U -s hamsa -a groq -w "$(pbpaste)"; printf "" | pbcopy`. Fallback Safari; if Groq is not free → Claude/GLM/agy/local per owner.
+5. Then continue the build loop on the Mac: T03 LLM probe, T02 STT bench, T05b embedder port, T08, T11b, T12 overlay, T13 app (docs/kickoff/07-engineering-plan.md).
+6. Keep the session card in "attention needed" (an open `jarvis-card ask`) until the app is finished — owner instruction.
+Context of this session ran out (~65%); this file is the full state.
