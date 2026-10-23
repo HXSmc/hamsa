@@ -47,3 +47,4 @@ Later mini-PC tasks wait on recorded calls: T06a (predictability) and T09 thresh
 - 2026-10-23 · T05 gate PASSED on Claude-judged recall@5 = 0.875 (en 1.00, ar 0.75); strict 0.475 (ADR 004)
 - 2026-10-23 · T06 PASSED via live API + CLI: 66 cards, bilingual 100%, sources 100%, 4 min
 - 2026-10-23 · CardMatcher default threshold 0.90 / margin 0.02 from 40 gold Qs vs 66 cards
+- 2026-10-23 · Mac session Step 0: 'Keep contact between sessions' appended to ~/.claude/CLAUDE.md (backup .bak-2026-10-23-contact) · Xcode 27.1 installed, waiting on owner licence accept · swap 8.2/9.2 GB > 6 GB stop line — builds wait until RAM freed
