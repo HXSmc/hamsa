@@ -14,6 +14,11 @@ struct BenchLLM: AsyncParsableCommand {
     @Option(help: "Arabic question set (JSONL).") var arFile: String = "../bench/llm-ar.jsonl"
     @Option(help: "Minimum ms between requests to one provider (default: groq 2100, gemini 4100).") var paceMs: Int?
     @Option(help: "Write every sample to this JSONL file.") var out: String?
+    @Flag(help: "T11: drive AnswerLLM.stream (groq -> gemini) with >= 3 snippets, cancel after the first token. HAMSA_DISABLE_PROVIDER=groq simulates a missing key.")
+    var withContext = false
+    @Option(help: "With --with-context: real snippets from this LocalIndex (Gemini left out of the chain). Default: synthetic fixture.")
+    var index: String?
+    @Option(help: "Project id in --index.") var project = "taweed"
 
     // Edit here: one row per model. `extra` is merged into the request body (overrides max_tokens).
     static let baseURLs: [String: String] = [
@@ -61,6 +66,7 @@ struct BenchLLM: AsyncParsableCommand {
     }
 
     func run() async throws {
+        if withContext { return try await runWithContext() }
         let wanted = providers.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         for w in wanted where Self.baseURLs[w] == nil { throw ValidationError("unknown provider \(w)") }
         var rows = Self.table.filter { wanted.contains($0.provider) }

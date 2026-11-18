@@ -5,13 +5,15 @@ import FoundationNetworking
 
 /// T11: T2 generated answer. OpenAI-compatible chat streaming with a provider fallback chain
 /// (Groq -> Gemini -> ... ; a paid Claude/GLM key drops in as one more provider, no code change).
-public struct LLMProvider: Sendable, Equatable {
+public struct LLMProvider: Sendable {
     public let name: String
     public let baseURL: URL      // e.g. https://api.groq.com/openai/v1
     public let model: String
-    public let apiKey: String
-    public init(name: String, baseURL: URL, model: String, apiKey: String) {
-        self.name = name; self.baseURL = baseURL; self.model = model; self.apiKey = apiKey
+    public let apiKey: String    // empty = no key: skipped without sending a request
+    /// Merged into the request body, e.g. `reasoning_effort` (ADR 002 decision 5).
+    public let extra: [String: any Sendable]
+    public init(name: String, baseURL: URL, model: String, apiKey: String, extra: [String: any Sendable] = [:]) {
+        self.name = name; self.baseURL = baseURL; self.model = model; self.apiKey = apiKey; self.extra = extra
     }
 }
 
@@ -60,9 +62,11 @@ public struct AnswerLLM: Sendable {
         req.timeoutInterval = 4
         req.setValue("Bearer \(p.apiKey)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: [
+        var body: [String: Any] = [
             "model": p.model, "messages": messages, "stream": true, "temperature": 0.2, "max_tokens": 160,
-        ] as [String: Any])
+        ]
+        for (k, v) in p.extra { body[k] = v }
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
         return req
     }
 
@@ -78,6 +82,8 @@ public struct AnswerLLM: Sendable {
                 let messages = AnswerPrompt.messages(question: question, snippets: snippets, styleLines: styleLines)
                 var errors: [String] = []
                 for p in providers {
+                    if Task.isCancelled { cont.finish(); return }
+                    guard !p.apiKey.isEmpty else { errors.append("\(p.name): no key"); continue }
                     do {
                         let (bytes, resp) = try await session.bytes(for: request(p, messages))
                         guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
@@ -90,6 +96,8 @@ public struct AnswerLLM: Sendable {
                     } catch is CancellationError {
                         cont.finish(); return
                     } catch {
+                        // A cancelled URLSession throws URLError.cancelled, not CancellationError: never fall through then.
+                        if Task.isCancelled { cont.finish(); return }
                         errors.append("\(p.name): \(error.localizedDescription)")
                     }
                 }
