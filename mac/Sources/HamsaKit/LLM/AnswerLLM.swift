@@ -10,10 +10,14 @@ public struct LLMProvider: Sendable {
     public let baseURL: URL      // e.g. https://api.groq.com/openai/v1
     public let model: String
     public let apiKey: String    // empty = no key: skipped without sending a request
+    /// False for providers whose terms let them train on / human-review prompts (Gemini free tier, ADR 002
+    /// decision 3): they get a request only when the call passes `notesConsent: true`. No default on purpose.
+    public let mayReceiveNotes: Bool
     /// Merged into the request body, e.g. `reasoning_effort` (ADR 002 decision 5).
     public let extra: [String: any Sendable]
-    public init(name: String, baseURL: URL, model: String, apiKey: String, extra: [String: any Sendable] = [:]) {
-        self.name = name; self.baseURL = baseURL; self.model = model; self.apiKey = apiKey; self.extra = extra
+    public init(name: String, baseURL: URL, model: String, apiKey: String, mayReceiveNotes: Bool, extra: [String: any Sendable] = [:]) {
+        self.name = name; self.baseURL = baseURL; self.model = model; self.apiKey = apiKey
+        self.mayReceiveNotes = mayReceiveNotes; self.extra = extra
     }
 }
 
@@ -71,17 +75,20 @@ public struct AnswerLLM: Sendable {
     }
 
     #if canImport(Darwin)
-    /// Streams text from the first provider that answers; falls through on HTTP/network errors.
+    /// Streams text from the first provider that answers; falls through on HTTP/network errors before the
+    /// first token only (after that a failure throws, so two answers never mix and notes go to one provider).
+    /// Providers with `mayReceiveNotes == false` are dropped unless `notesConsent` (owner OK for this call).
     /// Cancel the consuming Task to stop (a newer question replaced this one).
-    public func stream(question: String, snippets: [String], styleLines: [String], confidential: Bool)
+    public func stream(question: String, snippets: [String], styleLines: [String], confidential: Bool, notesConsent: Bool = false)
         -> AsyncThrowingStream<(provider: String, text: String), Error>
     {
         AsyncThrowingStream { cont in
             let task = Task {
                 if confidential { cont.finish(throwing: LLMError.confidential); return }
                 let messages = AnswerPrompt.messages(question: question, snippets: snippets, styleLines: styleLines)
-                var errors: [String] = []
-                for p in providers {
+                let allowed = providers.filter { $0.mayReceiveNotes || notesConsent }
+                var errors = providers.filter { !$0.mayReceiveNotes && !notesConsent }.map { "\($0.name): no notes consent" }
+                for p in allowed {
                     if Task.isCancelled { cont.finish(); return }
                     guard !p.apiKey.isEmpty else { errors.append("\(p.name): no key"); continue }
                     do {
@@ -89,8 +96,13 @@ public struct AnswerLLM: Sendable {
                         guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
                             errors.append("\(p.name): HTTP \((resp as? HTTPURLResponse)?.statusCode ?? 0)"); continue
                         }
-                        for try await line in bytes.lines {
-                            if let t = SSE.delta(Substring(line)) { cont.yield((p.name, t)) }
+                        var yielded = false
+                        do {
+                            for try await line in bytes.lines {
+                                if let t = SSE.delta(Substring(line)) { cont.yield((p.name, t)); yielded = true }
+                            }
+                        } catch where yielded && !Task.isCancelled {
+                            cont.finish(throwing: error); return  // mid-answer failure: no restart on the next provider
                         }
                         cont.finish(); return
                     } catch is CancellationError {

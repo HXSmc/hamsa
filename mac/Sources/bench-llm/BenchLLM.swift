@@ -1,7 +1,7 @@
 #if canImport(Darwin)
 import ArgumentParser
 import Foundation
-import HamsaKit
+@_spi(Bench) import HamsaKit
 
 /// T03: TTFT and Arabic quality per provider/model. Keys come from the Keychain (service "hamsa", account = provider).
 @main
@@ -11,7 +11,7 @@ struct BenchLLM: AsyncParsableCommand {
     @Option(name: [.customLong("n"), .customShort("n")], help: "Requests per model for the TTFT run.") var n: Int = 50
     @Option(help: "Comma list of providers.") var providers: String = "groq,gemini"
     @Option(help: "Optional override, comma list of provider:model.") var models: String?
-    @Option(help: "Arabic question set (JSONL).") var arFile: String = "../bench/llm-ar.jsonl"
+    @Option(help: "Arabic question set (JSONL).") var arFile: String = Self.fixtureFile
     @Option(help: "Minimum ms between requests to one provider (default: groq 2100, gemini 4100).") var paceMs: Int?
     @Option(help: "Write every sample to this JSONL file.") var out: String?
     @Flag(help: "T11: drive AnswerLLM.stream (groq -> gemini) with >= 3 snippets, cancel after the first token. HAMSA_DISABLE_PROVIDER=groq simulates a missing key.")
@@ -93,7 +93,7 @@ struct BenchLLM: AsyncParsableCommand {
         for row in rows {
             guard let key = keys[row.provider], let base = URL(string: Self.baseURLs[row.provider]!) else { continue }
             let llm = AnswerLLM(providers: [])
-            let prov = LLMProvider(name: row.provider, baseURL: base, model: row.model, apiKey: key)
+            let prov = LLMProvider(name: row.provider, baseURL: base, model: row.model, apiKey: key, mayReceiveNotes: row.provider != "gemini")
             let gap = paceMs ?? Self.defaultPaceMs[row.provider] ?? 2000
             var limitsPrinted = false
 

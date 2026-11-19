@@ -58,7 +58,8 @@ public enum Probe {
     /// One streaming request; ms from start to the first non-empty content delta.
     /// `limits` holds the response's `x-ratelimit*` headers (lowercased names).
     /// `extra` keys (e.g. `reasoning_effort`, `max_tokens`) are merged into the JSON body and override defaults.
-    public static func timeToFirstToken(
+    /// Bench-only (`@_spi(Bench) import HamsaKit`): a raw HTTP path with no confidential/consent gate.
+    @_spi(Bench) public static func timeToFirstToken(
         _ llm: AnswerLLM, _ p: LLMProvider, messages: [[String: String]], extra: [String: any Sendable] = [:]
     ) async -> (ttftMs: Double?, text: String, error: String?, limits: [String: String]) {
         let t0 = ContinuousClock.now

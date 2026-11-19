@@ -17,7 +17,8 @@ final class AnswerLLMTests: XCTestCase {
     }
 
     #if canImport(Darwin)
-    /// Fake transport. Hosts: down.test -> 503, up.test -> two tokens, hang.test -> one token then stays open.
+    /// Fake transport. Hosts: down.test -> 503, up.test -> two tokens, hang.test -> one token then stays open,
+    /// break.test -> one token then the connection drops.
     /// Counts requests per host and records torn-down (stopLoading) requests.
     final class Fake: URLProtocol, @unchecked Sendable {
         static let lock = NSLock()
@@ -39,6 +40,13 @@ final class AnswerLLMTests: XCTestCase {
                 client?.urlProtocol(self, didLoad: Data("data: {\"choices\":[{\"delta\":{\"content\":\"L4 \"}}]}\n\n".utf8))
                 return  // never finishes: only a cancel ends it
             }
+            if host == "break.test" {
+                client?.urlProtocol(self, didLoad: Data("data: {\"choices\":[{\"delta\":{\"content\":\"L4 \"}}]}\n\n".utf8))
+                DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) {  // drop after the token was read
+                    self.client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost))
+                }
+                return
+            }
             if !down {
                 let body = "data: {\"choices\":[{\"delta\":{\"content\":\"L4 \"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"GPU\"}}]}\n\ndata: [DONE]\n\n"
                 client?.urlProtocol(self, didLoad: Data(body.utf8))
@@ -50,17 +58,19 @@ final class AnswerLLMTests: XCTestCase {
 
     override func setUp() { Fake.reset() }
 
-    func llm(_ hosts: [(name: String, host: String, key: String)] = [("groq", "down.test", "k"), ("gemini", "up.test", "k")]) -> AnswerLLM {
+    func llm(_ hosts: [(name: String, host: String, key: String)] = [("groq", "down.test", "k"), ("gemini", "up.test", "k")],
+             geminiMayReceiveNotes: Bool = true) -> AnswerLLM {
         let cfg = URLSessionConfiguration.ephemeral
         cfg.protocolClasses = [Fake.self]
         return AnswerLLM(providers: hosts.map {
-            LLMProvider(name: $0.name, baseURL: URL(string: "https://\($0.host)/v1")!, model: "m", apiKey: $0.key)
+            LLMProvider(name: $0.name, baseURL: URL(string: "https://\($0.host)/v1")!, model: "m", apiKey: $0.key,
+                        mayReceiveNotes: $0.name != "gemini" || geminiMayReceiveNotes)
         }, session: URLSession(configuration: cfg))
     }
 
-    func collect(_ l: AnswerLLM) async throws -> (text: String, used: Set<String>) {
+    func collect(_ l: AnswerLLM, notesConsent: Bool = false) async throws -> (text: String, used: Set<String>) {
         var out = "", used = Set<String>()
-        for try await (p, t) in l.stream(question: "q", snippets: ["s"], styleLines: [], confidential: false) {
+        for try await (p, t) in l.stream(question: "q", snippets: ["s"], styleLines: [], confidential: false, notesConsent: notesConsent) {
             out += t; used.insert(p)
         }
         return (out, used)
@@ -88,6 +98,35 @@ final class AnswerLLMTests: XCTestCase {
         XCTAssertEqual(r.used, ["gemini"])
         XCTAssertEqual(Fake.count("down.test"), 0)
         XCTAssertEqual(Fake.count("up.test"), 1)
+    }
+
+    func testNoNotesConsentKeepsGeminiOut() async throws {
+        let l = llm(geminiMayReceiveNotes: false)
+        do {
+            _ = try await collect(l)
+            XCTFail("expected allFailed")
+        } catch {
+            XCTAssertEqual(error as? AnswerLLM.LLMError, .allFailed(["gemini: no notes consent", "groq: HTTP 503"]))
+        }
+        XCTAssertEqual(Fake.count("up.test"), 0)
+        XCTAssertEqual(Fake.count("down.test"), 1)
+        let r = try await collect(l, notesConsent: true)
+        XCTAssertEqual(r.text, "L4 GPU")
+        XCTAssertEqual(r.used, ["gemini"])
+        XCTAssertEqual(Fake.count("up.test"), 1)
+    }
+
+    func testFailureAfterFirstTokenThrowsWithoutFallback() async {
+        var out = ""
+        do {
+            for try await (_, t) in llm([("groq", "break.test", "k"), ("gemini", "up.test", "k")])
+                .stream(question: "q", snippets: ["s"], styleLines: [], confidential: false) { out += t }
+            XCTFail("expected the dropped connection to throw")
+        } catch {
+            XCTAssertEqual((error as? URLError)?.code, .networkConnectionLost)
+        }
+        XCTAssertEqual(out, "L4 ")
+        XCTAssertEqual(Fake.count("up.test"), 0, "must not restart the answer on the next provider")
     }
 
     func testCancelMidStreamTearsDownWithin200ms() async throws {
