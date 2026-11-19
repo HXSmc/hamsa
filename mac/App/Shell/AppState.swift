@@ -132,8 +132,10 @@ final class AppState: ObservableObject {
                                              confidential: startedWith, llm: llm, embedder: embedder, index: index, cards: cards,
                                              shown: AppOverlay.shown(ov), now: now)
             session = s; overlay = ov
-            // A flip made while the session was being built: apply it before any audio (no audio = no question).
-            if confidential != startedWith { await apply(confidential, to: s) }
+            // Flips made while the session was being built, applied before any audio (no audio = no question).
+            // ON at any point is sticky (localOnly), then the switch's current position.
+            if localOnly && !startedWith { await apply(true, to: s) }
+            if localOnly && !confidential { await apply(false, to: s) }
             await AppOverlay.start(ov, store: store, meeting: s.id)
             recording = true
             status = recordingStatus
@@ -198,6 +200,7 @@ final class AppState: ObservableObject {
             if let ov { AppOverlay.end(ov) }
             recording = false
             stopping = false
+            localOnly = false  // the "stays out of summaries" line belongs to the meeting that just ended
         }
         stopTask = t
         await t.value
