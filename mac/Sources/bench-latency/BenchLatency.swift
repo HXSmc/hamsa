@@ -25,7 +25,7 @@ struct BenchLatency: AsyncParsableCommand {
     @Option(help: "Dictation language of ME (ar|en).") var meLang = "en"
     @Option(help: "Alone: render the overlay states from a fixture to PNGs here and exit. With --replay --ui: also save live frames here.")
     var snapshot: String?
-    @Flag(help: "Show a fixture card and post one synthetic click on its pin button (only if the overlay is under the pointer).")
+    @Flag(help: "Show a fixture card in the overlay for 15 s for a hand click on its buttons; prints pinned/rating.")
     var clickTest = false
 
     /// Bench meetings end as `queued`; kept out of the app's live.sqlite so the summarizer never picks them up.
@@ -231,13 +231,23 @@ struct BenchLatency: AsyncParsableCommand {
         o.close()
     }
 
-    /// One synthetic click on the pin button of a fixture card in the real overlay (top-right of the main screen).
-    /// The click is posted only when the window under the pointer is the overlay, so it can never land in another app.
+    /// Hand click test: a fixture card in the real overlay (top-right) for 15 s; click 👍 / 📌 on it, then the
+    /// result is printed. Nothing is clicked for you (a synthetic click did not reach the panel and could land elsewhere).
     @MainActor
     static func clickTest() async {
         NSApplication.shared.setActivationPolicy(.accessory)
         NSApplication.shared.finishLaunching()
-        await clickBody()
+        let o = OverlayController()
+        o.model.live = true
+        o.model.aiOff = false
+        await o.commit(.question(id: 1, channel: "them", text: "Click test: press thumbs up or the pin"))
+        await o.commit(.answer(questionID: 1, tier: "T1", text: "Hamsa\nClick a footer button once; the result prints after 15 s.", provider: nil, done: true))
+        o.show()
+        print("click_test: overlay up for 15 s at the top-right")
+        pump(15_000)
+        print("click_test pinned=\(o.model.pinned) rating=\(o.model.rating.map(String.init) ?? "none")")
+        o.model.live = false
+        o.close()
     }
 
     /// Event monitors and button clicks need AppKit's event loop (the app runs one; this CLI pumps it, bounded).
@@ -245,66 +255,6 @@ struct BenchLatency: AsyncParsableCommand {
     static func pump(_ ms: Int) {
         let end = Date(timeIntervalSinceNow: Double(ms) / 1000)
         while let e = NSApp.nextEvent(matching: .any, until: end, inMode: .default, dequeue: true) { NSApp.sendEvent(e) }
-    }
-
-    /// Transparent system layers (Dock, Notification Center) span the screen above every app window; they are not
-    /// what a click at the overlay hits unless they draw there.
-    static let systemOverlays: Set<String> = ["Dock", "Notification Center", "Window Server"]
-
-    @MainActor
-    static func clickBody() async {
-        let o = OverlayController()
-        o.model.live = true
-        o.model.aiOff = false
-        await o.commit(.question(id: 1, channel: "them", text: "What is the monthly price?"))
-        await o.commit(.answer(questionID: 1, tier: "T1", text: "Pricing > Plans\nBasic is SAR 49 a month.", provider: nil, done: true))
-        o.show()
-        pump(400)
-        let r = o.model.buttonsRect  // hosting-view coordinates, top-left origin; pin = last 32 pt button
-        let local = NSPoint(x: r.maxX - 16, y: o.panel.frame.height - r.midY)
-        let screenPt = o.panel.convertPoint(toScreen: local)
-        let primaryH = NSScreen.screens.first?.frame.height ?? 0
-        let target = CGPoint(x: screenPt.x, y: primaryH - screenPt.y)  // CG global: top-left origin
-        let home = CGEvent(source: nil)?.location ?? target
-        func post(_ type: CGEventType, _ p: CGPoint) {
-            CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
-        }
-        post(.mouseMoved, target)
-        pump(400)
-        let accepts = !o.panel.ignoresMouseEvents
-        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-        let top = windows.first { Self.contains($0, target) && !systemOverlays.contains($0[kCGWindowOwnerName as String] as? String ?? "") }
-        let topIsOverlay = (top?[kCGWindowNumber as String] as? Int) == o.panel.windowNumber
-        let cursor = CGEvent(source: nil)?.location ?? .zero
-        let overlayRank = windows.firstIndex { ($0[kCGWindowNumber as String] as? Int) == o.panel.windowNumber }
-        print("# click_test buttons_rect=\(r) cursor_after_move=\(Int(cursor.x)),\(Int(cursor.y)) overlay_rank=\(overlayRank.map(String.init) ?? "absent") windows_above=\(windows.prefix(overlayRank ?? 0).filter { Self.contains($0, target) }.map { "\($0[kCGWindowOwnerName as String] ?? "?")/layer \($0[kCGWindowLayer as String] ?? "?")" })")
-        print("# click_test target=\(Int(target.x)),\(Int(target.y)) panel_accepts_mouse=\(accepts) top_window_is_overlay=\(topIsOverlay) top_owner=\(top?[kCGWindowOwnerName as String] as? String ?? "none")")
-        let seen = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { e in
-            let hit = o.panel.contentView?.hitTest(e.locationInWindow).map { String(describing: type(of: $0)) } ?? "nil"
-            print("# click_test app got \(e.type == .leftMouseDown ? "down" : "up") window=\(e.windowNumber) at=\(e.locationInWindow) hit=\(hit)")
-            return e
-        }
-        defer { seen.map(NSEvent.removeMonitor) }
-        if accepts, topIsOverlay {
-            post(.leftMouseDown, target)
-            pump(60)
-            post(.leftMouseUp, target)
-            pump(400)
-            print("click_test pinned_after_first_click=\(o.model.pinned)")
-        } else {
-            print("click_test skipped: the pointer is not over the overlay's buttons, a click could reach another app")
-        }
-        post(.mouseMoved, home)
-        o.model.live = false
-        o.close()
-    }
-}
-
-extension BenchLatency {
-    static func contains(_ w: [String: Any], _ p: CGPoint) -> Bool {
-        guard let b = w[kCGWindowBounds as String] as? NSDictionary, let rect = CGRect(dictionaryRepresentation: b) else { return false }
-        let alpha = w[kCGWindowAlpha as String] as? Double ?? 1
-        return alpha > 0 && rect.contains(p)
     }
 }
 
