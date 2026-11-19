@@ -200,9 +200,9 @@ public actor LivePipeline {
         guard token == tok else { return }  // a newer question took over while we read
         cancelT2()
         if priv.confidential || confidentialLatch { stats.t2Skipped["confidential", default: 0] += 1; return }
+        let (cont, now, shown) = (cont, now, shown)
         let wait = lastSentMs.map { max(0, $0 + minGapMs - now()) } ?? 0
         let styleLines = style.filter { $0.ms >= now() - 180_000 }.map(\.text)
-        let (cont, now, shown) = (cont, now, shown)
         let task = Task {
             if wait > 0 {
                 do { try await Task.sleep(for: .milliseconds(wait)) } catch { return }
