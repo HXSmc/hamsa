@@ -11,7 +11,7 @@ targets:
   Hamsa:
     type: application
     platform: macOS
-    sources: [Sources, Overlay]
+    sources: [Sources, Overlay, Shell]
     dependencies:
       - package: Hamsa
         product: HamsaKit

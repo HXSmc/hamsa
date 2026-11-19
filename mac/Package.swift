@@ -32,6 +32,9 @@ let package = Package(
             name: "hamsa-cli",
             dependencies: ["HamsaKit", .product(name: "ArgumentParser", package: "swift-argument-parser")]
         ),
+        // T13: the menu-bar app's code (App/Sources, Overlay, Shell); App/build-app.sh wraps the binary into Hamsa.app.
+        .executableTarget(name: "HamsaApp", dependencies: ["HamsaKit"], path: "App",
+                          exclude: ["project.yml", "build-app.sh"]),
         .testTarget(name: "HamsaKitTests", dependencies: ["HamsaKit"]),
     ] + benches.map {
         .executableTarget(
