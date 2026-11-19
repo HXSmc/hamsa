@@ -46,6 +46,10 @@ public actor LiveStore {
         // Transcripts (confidential meetings too): owner-only, set before WAL so -wal/-shm inherit the mode.
         if path != ":memory:" { try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path) }
         try db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
+        // An existing -wal/-shm keeps the mode it was created with: tighten those too.
+        for side in ["-wal", "-shm"] where path != ":memory:" && FileManager.default.fileExists(atPath: path + side) {
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path + side)
+        }
         try db.exec(Self.schema)
         // Schema 1 files (T08) have no notes_consent; CREATE TABLE IF NOT EXISTS does not add columns.
         var hasConsent = false

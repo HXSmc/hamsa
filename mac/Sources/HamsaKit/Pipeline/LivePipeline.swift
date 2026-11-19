@@ -13,13 +13,20 @@ import Foundation
 /// (after any gap wait). `setConfidential(true)` also cancels the answer in flight.
 /// All `*_ms` values use `now()`, the same clock as STTUpdate times (stream clock = audio timeline on a live feed),
 /// so `latency_events` (t_shown_ms - t_question_end_ms) is meaningful.
-/// `shown` (T12 overlay): awaited with each T0/T1 event and the first T2 token before `t_shown_ms` is taken, so the
-/// stored time is when the overlay committed the text to its window. nil = the time the event is emitted.
+/// `shown` (T12 overlay): every event is handed to it (the overlay's only input), awaited, before `t_shown_ms` is
+/// taken. It returns whether the screen changed: an answer it did not display (a T1 behind a T0 card, a T2 refusal
+/// still streaming) is not stamped; a T0/T1 it did not display writes no row. nil = stamped when emitted.
+/// It runs on the overlay's actor while this actor waits: a hung main thread would stall `ingest` (accepted: the
+/// overlay only sets state and flushes one view).
 public actor LivePipeline {
     public enum Event: Sendable {
         case question(id: Int, channel: String, text: String)
         /// T2 repeats with the growing text; `done` marks its last event.
         case answer(questionID: Int, tier: String, text: String, provider: String?, done: Bool)
+        /// The T2 of this question ended without showing any text (error, timeout, empty, or a refusal held back).
+        case answerFailed(questionID: Int)
+        /// After every `setConfidential`: the state the send gates now enforce.
+        case privacy(confidential: Bool)
     }
 
     public struct Stats: Sendable {
@@ -36,7 +43,7 @@ public actor LivePipeline {
         public var storeErrors = 0
     }
 
-    public typealias Shown = @Sendable (Event) async -> Void
+    public typealias Shown = @Sendable (Event) async -> Bool
     public nonisolated let events: AsyncStream<Event>
     private let cont: AsyncStream<Event>.Continuation
     let store: LiveStore
@@ -57,6 +64,8 @@ public actor LivePipeline {
     private var t2: (token: Int, task: Task<Void, Never>, sent: Bool, questionID: Int)?
     private var token = 0
     private var lastSentMs: Int?
+    /// The owner's switch in memory: wins over the stored row (a failed or not-yet-committed write must not send).
+    private var confidentialLatch = false
     private var cancelWaits: [Task<Void, Never>] = []  // one per in-flight cancel; awaited by finish()
 
     /// `minGapMs` nil = the chain's own pacing (`PipelineProviders.minGapMs`).
@@ -112,10 +121,18 @@ public actor LivePipeline {
     }
 
     /// Owner flips the meeting's confidential switch: stored first, then an answer in flight is cancelled.
-    /// Cancel first: a store write that throws must never leave an answer streaming.
+    /// ON latches and cancels before any await, so neither a throwing nor a slow store write can let a request out.
+    /// OFF clears the latch only after the write landed (a failed OFF stays closed).
     public func setConfidential(_ on: Bool) async throws {
-        if on { cancelT2() }
-        try await store.setConfidential(meeting: meeting, on)
+        if on { confidentialLatch = true; cancelT2() }
+        do { try await store.setConfidential(meeting: meeting, on) } catch { await publish(.privacy(confidential: confidentialLatch)); throw error }
+        if !on { confidentialLatch = false }
+        await publish(.privacy(confidential: confidentialLatch))
+    }
+
+    private func publish(_ e: Event) async {
+        cont.yield(e)
+        _ = await shown?(e)
     }
 
     /// End of meeting: lets the answer in flight finish, waits for cancel measurements, closes `events`.
@@ -138,7 +155,7 @@ public actor LivePipeline {
                                                 tQuestionEndMs: u.endMs, cardID: cardID, matchScore: score)
             ut.questionID = q
             stats.questions += 1
-            cont.yield(.question(id: q, channel: u.channel, text: u.text))
+            await publish(.question(id: q, channel: u.channel, text: u.text))
             return q
         } catch {
             stats.storeErrors += 1
@@ -151,7 +168,13 @@ public actor LivePipeline {
         let e = Event.answer(questionID: qid, tier: tier, text: text, provider: provider, done: true)
         cont.yield(e)
         let ms: Int
-        if let at { ms = at } else { await shown?(e); ms = now() }
+        if let at {  // T2's last event: the row keeps its first-token time
+            _ = await shown?(e)
+            ms = at
+        } else {
+            if let shown, !(await shown(e)) { return }  // not displayed: no row
+            ms = now()
+        }
         switch tier { case "T0": stats.t0 += 1; case "T1": stats.t1 += 1; default: stats.t2 += 1 }
         do { try await store.addAnswer(questionID: qid, tier: tier, tShownMs: ms, text: text, provider: provider) }
         catch { stats.storeErrors += 1 }
@@ -167,7 +190,7 @@ public actor LivePipeline {
         let priv = (try? await store.privacy(meeting: meeting)) ?? (confidential: true, notesConsent: false)
         guard token == tok else { return }  // a newer question took over while we read
         cancelT2()
-        if priv.confidential { stats.t2Skipped["confidential", default: 0] += 1; return }
+        if priv.confidential || confidentialLatch { stats.t2Skipped["confidential", default: 0] += 1; return }
         let wait = lastSentMs.map { max(0, $0 + minGapMs - now()) } ?? 0
         let styleLines = style.filter { $0.ms >= now() - 180_000 }.map(\.text)
         let (cont, now, shown) = (cont, now, shown)
@@ -184,7 +207,8 @@ public actor LivePipeline {
                     provider = p
                     let e = Event.answer(questionID: qid, tier: "T2", text: text, provider: p, done: false)
                     cont.yield(e)
-                    if firstMs == nil { await shown?(e); firstMs = now() }
+                    let onScreen = await shown?(e) ?? true
+                    if firstMs == nil, onScreen { firstMs = now() }
                 }
             } catch {
                 err = String("\(error)".prefix(160))
@@ -200,7 +224,7 @@ public actor LivePipeline {
         guard t2?.token == tok, !Task.isCancelled else { return nil }
         let priv = (try? await store.privacy(meeting: meeting)) ?? (confidential: true, notesConsent: false)
         guard t2?.token == tok, !Task.isCancelled else { return nil }
-        if priv.confidential {
+        if priv.confidential || confidentialLatch {
             stats.t2Skipped["confidential", default: 0] += 1
             t2 = nil
             return nil
@@ -217,6 +241,7 @@ public actor LivePipeline {
         if t2?.token == tok { t2 = nil }
         if let err, !cancelled { stats.t2Errors[err, default: 0] += 1 }
         if !cancelled, let firstMs, !text.isEmpty { await show(qid, "T2", text, provider, at: firstMs) }
+        else if !cancelled { await publish(.answerFailed(questionID: qid)) }
     }
 
     private func cancelT2() {

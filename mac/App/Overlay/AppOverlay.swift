@@ -1,19 +1,22 @@
 import HamsaKit
 
-/// T12 app glue: the answer overlay (HamsaKit/Overlay) on a live meeting. T13 creates the pipeline with
-/// `shown: AppOverlay.shown(overlay)` and keeps the returned task for the length of the meeting.
+/// T12 app glue: the answer overlay (HamsaKit/Overlay) on a live meeting. T13: `start` when the meeting starts,
+/// create the pipeline with `shown: AppOverlay.shown(overlay)` (the overlay's only input: questions, answers,
+/// privacy changes), `end` when it stops.
 @MainActor
 enum AppOverlay {
     /// t_shown_ms = text committed to the overlay window.
     static func shown(_ overlay: OverlayController) -> LivePipeline.Shown { { await overlay.commit($0) } }
 
-    /// Shows the overlay, mirrors the stored privacy state ("AI off", read only) and applies events until the meeting ends.
-    static func attach(_ overlay: OverlayController, to pipeline: LivePipeline, store: LiveStore, meeting: String) -> Task<Void, Never> {
+    /// Shows the overlay; "AI off" stays on until the stored privacy state is read (read only, never written).
+    static func start(_ overlay: OverlayController, store: LiveStore, meeting: String) async {
+        overlay.model.live = true
         overlay.show()
-        return Task { @MainActor in
-            overlay.model.aiOff = (try? await store.privacy(meeting: meeting).confidential) ?? true
-            for await e in pipeline.events { overlay.model.apply(e) }
-            overlay.close()
-        }
+        overlay.model.aiOff = (try? await store.privacy(meeting: meeting).confidential) ?? true
+    }
+
+    static func end(_ overlay: OverlayController) {
+        overlay.model.live = false
+        overlay.close()
     }
 }

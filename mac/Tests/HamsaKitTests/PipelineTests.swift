@@ -249,8 +249,46 @@ final class PipelineTests: XCTestCase {
         do { try await p.setConfidential(true); XCTFail("store write should have thrown") } catch {}
         await waitFor { Fake.stoppedCount() >= 1 }
         XCTAssertGreaterThanOrEqual(Fake.stoppedCount(), 1, "answer still streaming after a failed confidential write")
+        // The stored row still says not confidential: the in-memory latch must keep the next question local.
+        await p.ingest(final("How many GPUs do you run?", at: 5000))
         await p.finish()
-        XCTAssertEqual(Fake.count(), 1, "the cancel caused a new request")
+        XCTAssertEqual(Fake.count(), 1, "a request left after the owner switched confidential on")
+        let skipped = await p.stats.t2Skipped["confidential"]
+        XCTAssertEqual(skipped, 1)
+    }
+
+    /// The overlay hook gets every event; an answer it did not display is not stamped and writes no row.
+    func testShownFalseWritesNoRowAndPrivacyIsPublished() async throws {
+        let path = tmp()
+        let idx = try LocalIndex(path: track(LocalIndexTests().makeIndex()), projectID: "taweed", dim: 4)
+        let store = try LiveStore(path: path)
+        try await store.startMeeting(id: "m1")
+        let seen = Events()
+        let p = LivePipeline(store: store, meeting: "m1", embedder: FixedEmbedder(v: [1, 0, 0, 0]), index: idx, cards: nil,
+                             llm: nil, minGapMs: 0, shown: { e in seen.add(e); return false }, now: now)
+        await p.ingest(final("Which GPU do you run inference on?", at: 4000))
+        try await p.setConfidential(true)
+        await p.finish()
+        XCTAssertEqual(seen.kinds, ["question", "answer", "privacy:true"])
+        var rows = 0
+        try SQLiteDB(path: path).query("SELECT COUNT(*) FROM answer_events") { rows = $0.int(0) }
+        XCTAssertEqual(rows, 0)
+    }
+
+    final class Events: @unchecked Sendable {
+        private let lock = NSLock()
+        private var k: [String] = []
+        var kinds: [String] { lock.withLock { k } }
+        func add(_ e: LivePipeline.Event) {
+            let s: String
+            switch e {
+            case .question: s = "question"
+            case .answer: s = "answer"
+            case .answerFailed: s = "failed"
+            case let .privacy(c): s = "privacy:\(c)"
+            }
+            lock.withLock { k.append(s) }
+        }
     }
 
     /// T12: t_shown_ms is taken after the overlay's `shown` hook returns (T1 and the first T2 token).
@@ -262,15 +300,18 @@ final class PipelineTests: XCTestCase {
         let hooked = Counter()
         let p = LivePipeline(store: store, meeting: "m1", embedder: FixedEmbedder(v: [1, 0, 0, 0]), index: idx, cards: nil,
                              llm: llm("up.test"), minGapMs: 0,
-                             shown: { _ in hooked.add(); try? await Task.sleep(for: .milliseconds(60)) }, now: now)
+                             shown: { e in
+                                 guard case .answer = e else { return true }
+                                 hooked.add(); try? await Task.sleep(for: .milliseconds(60)); return true
+                             }, now: now)
         let before = now()
         await p.ingest(final("Which GPU do you run inference on?", at: 4000))
         await p.finish()
-        XCTAssertEqual(hooked.value, 2)  // T1 + first T2 token, not every token
+        XCTAssertEqual(hooked.value, 4)  // T1, two T2 tokens, T2 done: every answer event goes through the one applier
         var shown: [String: Int] = [:]
         try SQLiteDB(path: path).query("SELECT tier, t_shown_ms FROM answer_events") { shown[$0.text(0)] = $0.int(1) }
         XCTAssertGreaterThanOrEqual(shown["T1"] ?? 0, before + 60)
-        XCTAssertGreaterThanOrEqual(shown["T2"] ?? 0, (shown["T1"] ?? 0) + 60)
+        XCTAssertGreaterThanOrEqual(shown["T2"] ?? 0, (shown["T1"] ?? 0) + 60)  // first token stamped after its commit
     }
 
     /// 03-tdd: first_text_ms is negative when the text shows before the question ends; the view keeps the sign.
