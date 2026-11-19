@@ -29,6 +29,7 @@ public final class OverlayController {
         panel.backgroundColor = .clear
         panel.hasShadow = false
         panel.ignoresMouseEvents = true
+        panel.acceptsMouseMovedEvents = true  // the local monitor needs moves while the pointer is over the buttons
     }
 
     public func show() {

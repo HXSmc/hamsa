@@ -25,9 +25,6 @@ final class OverlayTests: XCTestCase {
 
         let r = OverlayModel()
         r.apply(q)
-        r.apply(.answer(questionID: 1, tier: "T1", text: "pricing.md\nSAR 49", provider: nil, done: true))
-        r.apply(.answer(questionID: 1, tier: "T2", text: "Not", provider: "groq", done: false))
-        XCTAssertEqual(r.body, "SAR 49", "a streaming refusal must not blank the snippet word by word")
         r.apply(.answer(questionID: 1, tier: "T2", text: "Not in your notes.", provider: "groq", done: true))
         XCTAssertEqual(r.state, .notInNotes)
     }

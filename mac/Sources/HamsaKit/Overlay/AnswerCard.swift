@@ -52,8 +52,6 @@ public final class OverlayModel {
             let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
             let refusal = trimmed.contains(Self.refusal), maybeRefusal = !refusal && Self.refusal.hasPrefix(trimmed)
             if t == "T2", tier == "T0", refusal || maybeRefusal { return }  // a matched card is never replaced by "not in notes"
-            // A streaming "Not in…" would blank the snippet word by word: keep it until the refusal is complete.
-            if t == "T2", tier == "T1", maybeRefusal { streaming = !done; scheduleFade(); return }
             tier = t; text = body; provider = p; streaming = t == "T2" && !done; visible = true
         }
         scheduleFade()
