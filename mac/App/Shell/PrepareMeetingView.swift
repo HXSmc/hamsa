@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Before a call: title, project, confidential switch, agenda; Prepare syncs the brain's cards.
+/// Before a call: title, project, confidential switch; Prepare syncs the brain's cards.
 struct PrepareMeetingView: View {
     @EnvironmentObject var app: AppState
 
@@ -12,30 +12,30 @@ struct PrepareMeetingView: View {
             }
             Toggle("Confidential", isOn: app.confidentialBinding)
                 .disabled(app.stopping)
-                .accessibilityHint("When on, no question is sent to AI providers and no summary is made.")
+                .accessibilityHint("When on, no question is sent to AI providers and the meeting stays out of summaries.")
             Text(app.recording ? app.confidentialText : "Confidential: answers come only from your cards and notes on this Mac. Nothing goes to AI providers, and the meeting stays out of summaries even if you turn it off later.")
-                .font(.callout).fixedSize(horizontal: false, vertical: true)
-            LabeledContent("Agenda") {
-                TextEditor(text: $app.agenda)
-                    .font(.body)
-                    .frame(height: 64)
-                    .accessibilityLabel("Agenda, optional")
+                .fixedSize(horizontal: false, vertical: true)
+            if app.offline { Notice(icon: "exclamationmark.triangle.fill", text: app.status, tint: .orange).padding(.top, 4) }
+            else { StatusLine(recording: false, text: app.status).padding(.top, 4) }
+            if app.cardCount == 0 && !app.preparing {
+                Notice(icon: "rectangle.stack.badge.plus", text: "No cards yet. Link the brain so Prepare can pull your answer cards, or start anyway with note snippets only.")
+                Button("Link the brain…") { app.openSetup(step: 3) }
             }
-            StatusLine(recording: false, text: app.status)
-                .padding(.top, 4)
             HStack {
                 Button("Prepare answers for \(app.settings.project.capitalized)") { Task { await app.prepare() } }
                     .disabled(app.preparing || app.recording)
+                if app.preparing { ProgressView().controlSize(.small) }
                 Spacer()
                 Button("Start meeting") {
                     app.windows.close(.prepare)
                     Task { await app.start() }
                 }
                 .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
                 .disabled(app.recording || app.starting)
             }
-            if app.preparing { Text("Syncing cards from the brain…").font(.callout) }
-            if app.recording { Text("A meeting is already recording.").font(.callout) }
+            if app.preparing { Text("Syncing cards from the brain…") }
+            if app.recording { Text("A meeting is already recording. Confidential still works from here.") }
         }
         .formStyle(.grouped)
         .frame(width: 440)

@@ -151,7 +151,8 @@ public enum Prepare {
     }
 
     /// `brain` nil = not linked (no address or no token). Start stays allowed whatever this returns.
-    public static func run(home: HamsaHome, brain: BrainSync?, now: Date = Date()) async -> String {
+    /// `offline`: the line is the "Using N cards from last sync" fallback, not "Ready".
+    public static func run(home: HamsaHome, brain: BrainSync?, now: Date = Date()) async -> (text: String, offline: Bool) {
         guard let brain else { return offline(home, "brain not linked", now) }
         do {
             for name in BrainSync.files {
@@ -165,12 +166,12 @@ public enum Prepare {
         let n = cardCount(home.cards)
         if n == 0 { return offline(home, "the brain has no cards yet", now) }  // 404s: nothing built, not "Ready"
         let index = age(home.index, now: now).map { ", index \($0)" } ?? ""
-        return "Ready: \(n) cards\(index)"
+        return ("Ready: \(n) cards\(index)", false)
     }
 
-    static func offline(_ home: HamsaHome, _ why: String, _ now: Date) -> String {
+    static func offline(_ home: HamsaHome, _ why: String, _ now: Date) -> (text: String, offline: Bool) {
         let synced = age(home.cards, now: now).map { ", \($0)" } ?? ", never synced"
-        return "Using \(cardCount(home.cards)) cards from last sync (\(why)\(synced))"
+        return ("Using \(cardCount(home.cards)) cards from last sync (\(why)\(synced))", true)
     }
 }
 

@@ -58,8 +58,9 @@ enum ShellLaunch {
     }
 }
 
-/// Renders the real views, in their real states, from an offscreen window (AppKit controls draw; a screen grab
-/// is not needed). Evidence only: the share-hidden overlay is never written here.
+/// Renders the real views, in their real states, from an offscreen key window (AppKit controls draw with the
+/// accent colour, as in an active window; a screen grab is not needed). Evidence only: the share-hidden overlay is
+/// never written here.
 @MainActor
 enum Snapshot {
     static func renderAll(_ app: AppState, to dir: URL) async {
@@ -71,6 +72,9 @@ enum Snapshot {
         }
         // Onboarding 1..4 + Done, in the state this Mac really has (mic status, key present or not).
         for s in 1...5 { app.step = s; await shot("onboarding-\(s)", OnboardingView()) }
+        app.step = 2; app.systemAudio = .blocked
+        await shot("onboarding-2-blocked", OnboardingView())
+        app.systemAudio = .unknown
         await shot("permission-mic", PermissionHelpView(permission: .microphone))
         await shot("permission-system-audio", PermissionHelpView(permission: .systemAudio))
         // Brain unreachable: a real link test against a closed local port.
@@ -90,21 +94,24 @@ enum Snapshot {
         app.keyPresent = had
         app.keyEntry = ""
         app.settings = ShellSettings.load(app.home)
-        // Prepare: the real sync path with this Mac's settings + Keychain.
-        app.status = "Not prepared yet"
-        await shot("menu-first-launch", MenuBarView())
+        // Menu at launch (status seeded from the local card count), then Prepare: the real sync path.
+        await shot("menu-idle", MenuBarView())
         await app.prepare()
         await shot("prepare", PrepareMeetingView())
         await shot("menu-ready", MenuBarView())
-        // Display states of the menu (set directly; the live run proves the transitions).
+        // Display states of the menu (set directly; the live replay run proves the transitions).
+        app.starting = true
+        await shot("menu-starting", MenuBarView())
+        app.starting = false
         app.recording = true; app.status = "Recording"
         await shot("menu-recording", MenuBarView())
         await app.setConfidential(true); app.status = "Recording · Confidential: AI answers off"
         await shot("menu-recording-confidential", MenuBarView())
+        await shot("prepare-recording", PrepareMeetingView())
         app.recording = false; app.status = "Stopped"; app.lastStop = "Saved on this Mac. Summary skipped (confidential)."
         await shot("menu-stopped-confidential", MenuBarView())
         app.lastStop = nil; await app.setConfidential(false)
-        app.error = "Could not start: microphone permission denied (System Settings > Privacy > Microphone)"
+        app.error = "Hamsa can't use the microphone. Allow it in System Settings, then start again."
         await shot("menu-start-error", MenuBarView())
         app.error = nil
         for rec in [false, true] {
@@ -114,15 +121,24 @@ enum Snapshot {
         app.recording = false
     }
 
+    /// Borderless windows refuse key status by default; key status is what makes controls draw active.
+    final class KeyWindow: NSWindow {
+        override var canBecomeKey: Bool { true }
+        override var canBecomeMain: Bool { true }
+    }
+
     static func render(_ view: AnyView, _ url: URL, dark: Bool) async {
         let host = NSHostingView(rootView: AnyView(view.background(Color(nsColor: .windowBackgroundColor))))
         host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-        let w = NSWindow(contentRect: NSRect(origin: .zero, size: host.fittingSize), styleMask: [.borderless], backing: .buffered, defer: false)
+        let w = KeyWindow(contentRect: NSRect(origin: .zero, size: host.fittingSize), styleMask: [.borderless], backing: .buffered, defer: false)
         w.isReleasedWhenClosed = false  // ARC owns it; a released-on-close window double-frees
         w.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         w.backgroundColor = .windowBackgroundColor
         w.contentView = host
-        try? await Task.sleep(for: .milliseconds(150))  // let SwiftUI apply the state change
+        w.setFrameOrigin(NSPoint(x: -20000, y: -20000))  // off every screen
+        NSApp.activate(ignoringOtherApps: true)
+        w.makeKeyAndOrderFront(nil)
+        try? await Task.sleep(for: .milliseconds(200))  // let SwiftUI apply the state change and the key state
         host.setFrameSize(host.fittingSize)
         host.layoutSubtreeIfNeeded()
         guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return }

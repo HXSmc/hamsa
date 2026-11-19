@@ -8,13 +8,17 @@ import SwiftUI
 final class AppState: ObservableObject {
     enum Permission { case microphone, systemAudio }
     enum KeyCheck: Equatable { case none, checking, saved, failed(String) }
-    enum BrainCheck: Equatable { case none, checking, ok, failed(String) }
+    enum BrainCheck: Equatable { case none, checking, ok, failed(String), unreachable(String) }
+    enum SystemAudio { case unknown, allowed, blocked }
 
     let home = HamsaHome.current()
     @Published var settings: ShellSettings
 
     // Status + meeting
-    @Published var status = "Not prepared yet"
+    @Published var status = ""
+    /// The status is the offline "Using N cards from last sync" line (a warning, Start still allowed).
+    @Published var offline = false
+    @Published var cardCount = 0
     @Published var preparing = false
     @Published var recording = false
     @Published var starting = false
@@ -24,14 +28,14 @@ final class AppState: ObservableObject {
     /// This meeting was confidential at some point: it stays out of summaries even after the switch goes OFF.
     @Published private(set) var localOnly = false
     @Published var title = ""
-    @Published var agenda = ""
+    private var lastDefaultTitle = ""
     @Published var lastStop: String?
     @Published var error: String?
 
     // Onboarding
     @Published var step = 1
     @Published var mic = AVCaptureDevice.authorizationStatus(for: .audio)
-    @Published var systemAudioAsked = false
+    @Published var systemAudio = SystemAudio.unknown
     @Published var deniedPermission: Permission?
     @Published var brainToken = ""
     @Published var brain = BrainCheck.none
@@ -47,7 +51,24 @@ final class AppState: ObservableObject {
 
     init() {
         settings = ShellSettings.load(home)
+        cardCount = Prepare.cardCount(home.cards)
+        status = cardCount > 0 ? "\(cardCount) cards from last sync" : "No cards yet"
         title = Self.defaultTitle()
+        lastDefaultTitle = title
+    }
+
+    /// Prepare window: the default title follows the app in front now, unless the owner typed one.
+    func openPrepare() {
+        if title == lastDefaultTitle { title = Self.defaultTitle(); lastDefaultTitle = title }
+        windows.show(.prepare, self)
+    }
+
+    /// "Set up Hamsa…" starts over at `step` (step 3 = link the brain).
+    func openSetup(step: Int = 1) {
+        self.step = step
+        brain = .none
+        key = .none
+        windows.show(.onboarding, self)
     }
 
     var projects: [String] { Prepare.projects(home.index) }
@@ -72,7 +93,8 @@ final class AppState: ObservableObject {
         if let url = linkedBrain, let token = ShellKeychain.read(service: ShellKeychain.brain.service, account: ShellKeychain.brain.account) {
             sync = BrainSync(base: url, token: token, dir: home.dir)
         }
-        status = await Prepare.run(home: home, brain: sync)
+        (status, offline) = await Prepare.run(home: home, brain: sync)
+        cardCount = Prepare.cardCount(home.cards)
         preparing = false
     }
 
@@ -133,6 +155,7 @@ final class AppState: ObservableObject {
     var confidentialText: String {
         if confidential { return "AI answers off. Cards and notes only. This meeting stays out of summaries." }
         if localOnly { return "AI answers on again. This meeting stays out of summaries: part of it was confidential." }
+        if !keyPresent { return "AI answers off: no Groq key. Cards and notes only. Add a key in Set up Hamsa." }
         return "AI answers on for questions your cards miss."
     }
 
@@ -224,11 +247,10 @@ final class AppState: ObservableObject {
 
     /// macOS has no public status call for system-audio capture: opening a tap once asks (first time) or fails.
     func requestSystemAudio() {
-        systemAudioAsked = true
         guard #available(macOS 14.2, *) else { return }
         let tap = SystemTap()
-        do { try tap.start { _ in }; tap.stop(); step = 3 }
-        catch { deniedPermission = .systemAudio; windows.show(.permission, self) }
+        do { try tap.start { _ in }; tap.stop(); systemAudio = .allowed; step = 3 }
+        catch { systemAudio = .blocked; deniedPermission = .systemAudio; windows.show(.permission, self) }
     }
 
     func testBrain() async {
@@ -268,7 +290,7 @@ final class AppState: ObservableObject {
             case let c: brain = .failed("The brain answered with error \(c).")
             }
         } catch {
-            brain = .failed("Could not reach the brain. Check that the mini PC is on and Tailscale is connected.")
+            brain = .unreachable("Could not reach the brain. Check that the mini PC is on and Tailscale is connected.")
         }
     }
 

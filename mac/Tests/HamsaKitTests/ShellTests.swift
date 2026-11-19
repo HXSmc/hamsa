@@ -145,13 +145,14 @@ final class ShellTests: XCTestCase {
         let home = HamsaHome(dir: dir)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let status = await Prepare.run(home: home, brain: nil)
-        XCTAssertEqual(status, "Using 0 cards from last sync (brain not linked, never synced)")
+        XCTAssertEqual(status.text, "Using 0 cards from last sync (brain not linked, never synced)")
+        XCTAssertTrue(status.offline)
         let db = try SQLiteDB(path: home.cards.path, readOnly: false)
         try db.exec("CREATE TABLE cards (id INTEGER PRIMARY KEY); INSERT INTO cards VALUES (1),(2),(3);")
         XCTAssertEqual(Prepare.cardCount(home.cards), 3)
         let unreachable = BrainSync(base: URL(string: "http://127.0.0.1:9")!, token: "t", dir: dir)
         let s2 = await Prepare.run(home: home, brain: unreachable)
-        XCTAssertTrue(s2.hasPrefix("Using 3 cards from last sync (brain unreachable, 0 h old"), s2)
+        XCTAssertTrue(s2.text.hasPrefix("Using 3 cards from last sync (brain unreachable, 0 h old"), s2.text)
     }
 
     func testSettingsAndTokenRules() throws {
