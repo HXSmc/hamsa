@@ -53,7 +53,9 @@ struct BenchLLM: AsyncParsableCommand {
 
     func loadItems() throws -> [Item] {
         let fm = FileManager.default
-        guard let path = [arFile, "bench/llm-ar.jsonl", "../bench/llm-ar.jsonl"].first(where: { fm.fileExists(atPath: $0) })
+        // Fallback paths only for the default fixture: a missing custom --ar-file must fail, not silently bench the fixture.
+        let candidates = arFile == Self.fixtureFile ? [arFile, "bench/llm-ar.jsonl", "../bench/llm-ar.jsonl"] : [arFile]
+        guard let path = candidates.first(where: { fm.fileExists(atPath: $0) })
         else { throw ValidationError("cannot find \(arFile)") }
         let text = try String(contentsOfFile: path, encoding: .utf8)
         return try text.split(whereSeparator: \.isNewline).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
@@ -77,6 +79,10 @@ struct BenchLLM: AsyncParsableCommand {
                 let known = Self.table.first { $0.provider == parts[0] && $0.model == parts[1] }
                 return (parts[0], parts[1], known?.extra ?? ["max_tokens": 400])
             }
+        }
+        // Same rule as --with-context: only the synthetic fixture may reach Gemini's free tier (ADR 002 decision 3).
+        if arFile != Self.fixtureFile, rows.contains(where: { $0.provider == "gemini" }) {
+            throw ValidationError("--ar-file \(arFile) may hold real notes and Gemini is in the run: use --providers groq")
         }
         let items = try loadItems()
         guard !items.isEmpty else { throw ValidationError("empty Arabic set") }

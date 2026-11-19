@@ -42,7 +42,12 @@ extension BenchLLM {
     func runWithContext() async throws {
         let disabled = Set((ProcessInfo.processInfo.environment["HAMSA_DISABLE_PROVIDER"] ?? "")
             .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
-        let chain = Self.chainModels.map { m in Self.table.first { $0.provider == m.0 && $0.model == m.1 }! }
+        let chain = try Self.chainModels.map { m in
+            guard let row = Self.table.first(where: { $0.provider == m.0 && $0.model == m.1 }) else {
+                throw ValidationError("chain model \(m.0)/\(m.1) is not in BenchLLM.table")
+            }
+            return row
+        }
         // Only the synthetic fixture may go to a provider without notes consent (Gemini free tier, ADR 002 decision 3).
         let synthetic = index == nil && arFile == Self.fixtureFile
         if !synthetic, !disabled.contains("gemini") {
@@ -70,8 +75,12 @@ extension BenchLLM {
         let watch = TaskWatch()
         let llm = AnswerLLM(providers: providers, session: URLSession(configuration: .default, delegate: watch, delegateQueue: nil))
         // First provider that will actually be tried; with groq disabled the run is judged on gemini.
+        // The relaxed fallback gate is only for a deliberate HAMSA_DISABLE_PROVIDER run, never a missing primary key.
+        let isTruePrimary = !disabled.contains(chain[0].provider)
+        if isTruePrimary, providers[0].apiKey.isEmpty {
+            throw ValidationError("no Keychain item for primary \(chain[0].provider); to test fallback set HAMSA_DISABLE_PROVIDER=\(chain[0].provider)")
+        }
         guard let primary = providers.first(where: { !$0.apiKey.isEmpty })?.name else { throw ValidationError("no provider has a key") }
-        let isTruePrimary = primary == chain[0].provider
         // 4100 ms (15/min) hit Groq 429 on 4 of 50 runs (8k tokens/min); ADR 002 ran at 6000.
         let gap = paceMs ?? 6000
         print("== with-context: chain=\(chain.map { "\($0.provider)/\($0.model)" }.joined(separator: ",")) primary=\(primary) "
