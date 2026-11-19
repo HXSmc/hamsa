@@ -10,9 +10,10 @@ struct PrepareMeetingView: View {
             Picker("Project", selection: $app.settings.project) {
                 ForEach(app.projects, id: \.self) { Text($0.capitalized).tag($0) }
             }
-            Toggle("Confidential", isOn: $app.confidential)
+            Toggle("Confidential", isOn: app.confidentialBinding)
+                .disabled(app.stopping)
                 .accessibilityHint("When on, no question is sent to AI providers and no summary is made.")
-            Text("Confidential: answers come only from your cards and notes on this Mac. Nothing goes to AI providers and no summary is made.")
+            Text(app.recording ? app.confidentialText : "Confidential: answers come only from your cards and notes on this Mac. Nothing goes to AI providers, and the meeting stays out of summaries even if you turn it off later.")
                 .font(.callout).fixedSize(horizontal: false, vertical: true)
             LabeledContent("Agenda") {
                 TextEditor(text: $app.agenda)

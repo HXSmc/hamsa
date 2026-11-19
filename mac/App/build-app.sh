@@ -1,5 +1,5 @@
 #!/bin/bash
-# T13: builds Hamsa.app without XcodeGen/Xcode project: SwiftPM binary + hand-written bundle, ad-hoc signed.
+# T13: builds Hamsa.app without XcodeGen/Xcode project: SwiftPM binary + hand-written bundle, ad-hoc signed with the hardened runtime.
 # Keep the Info.plist keys in step with project.yml (LSUIElement + the two usage strings).
 # Usage: mac/App/build-app.sh [debug|release]   -> mac/.build/Hamsa.app
 set -euo pipefail
@@ -33,5 +33,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </dict>
 </plist>
 PLIST
-codesign -s - --force --deep "$APP"
+# Hardened runtime: DYLD_* injection is ignored and only system / same-signature code loads, so nothing can
+# ride on Hamsa's microphone and system-audio grants. Entitlements: audio-input only.
+codesign -s - --force --options runtime --entitlements App/Hamsa.entitlements "$APP"
 echo "built $PWD/$APP"

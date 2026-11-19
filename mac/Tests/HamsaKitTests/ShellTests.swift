@@ -55,12 +55,90 @@ final class ShellTests: XCTestCase {
         XCTAssertEqual(ended, 1)
     }
 
-    func testMidCallSwitchOnMarksLocalOnly() async throws {
+    /// Stored (confidential, claude_allowed) of one meeting, read on a separate connection.
+    func pair(_ id: String) throws -> String {
+        var out = "none"
+        try SQLiteDB(path: HamsaHome(dir: dir).live.path).query("SELECT confidential, claude_allowed FROM meetings WHERE id = ?", [id]) {
+            out = "\($0.int(0)),\($0.int(1))"
+        }
+        return out
+    }
+    func sql(_ q: String) throws { try SQLiteDB(path: HamsaHome(dir: dir).live.path, readOnly: false).exec(q) }
+
+    func testConfidentialStartStoresPairInOneGo() async throws {
+        let s = try await session(confidential: true)
+        XCTAssertEqual(try pair(s.id), "1,0")
+        _ = try await s.stop()
+        XCTAssertEqual(try pair(s.id), "1,0")
+    }
+
+    func testOnThenOffEndsLocalOnly() async throws {
         let s = try await session(confidential: false)
+        XCTAssertEqual(try pair(s.id), "0,1")
         try await s.setConfidential(true)
         try await s.setConfidential(false)
         let summary = try await s.stop()
         XCTAssertFalse(summary, "a meeting that was confidential for a while must not be summarised by Claude")
+        XCTAssertEqual(try pair(s.id), "1,0", "the brain skips only confidential=1 AND claude_allowed=0")
+    }
+
+    func testFailedMidCallOnWriteStillDisallowsAndLatches() async throws {
+        let s = try await session(confidential: false)
+        try sql("CREATE TRIGGER no_conf BEFORE UPDATE OF confidential ON meetings BEGIN SELECT RAISE(ABORT, 'injected'); END;")
+        var threw = false
+        do { try await s.setConfidential(true) } catch { threw = true }
+        XCTAssertTrue(threw, "the injected write failure did not fire")
+        XCTAssertEqual(try pair(s.id), "0,0", "claude_allowed=0 must be written even when the pipeline write fails")
+        await question(s)
+        XCTAssertEqual(Fake.count(), 0, "the latch must hold after a failed ON write")
+        try sql("DROP TRIGGER no_conf;")
+        _ = try await s.stop()
+        XCTAssertEqual(try pair(s.id), "1,0", "Stop re-asserts the pair for a meeting that was ever ON")
+    }
+
+    func testFailedStartLeavesNoRow() async throws {
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let store = try LiveStore(path: HamsaHome(dir: dir).live.path)
+        try sql("CREATE TRIGGER no_project BEFORE UPDATE OF project_id ON meetings BEGIN SELECT RAISE(ABORT, 'injected'); END;")
+        var threw = false
+        do { _ = try await MeetingSession(store: store, title: "t", project: "taweed", app: nil, confidential: true, llm: llm(), now: { 1000 }) }
+        catch { threw = true }
+        XCTAssertTrue(threw, "the injected setProject failure did not fire")
+        var rows = -1
+        try SQLiteDB(path: HamsaHome(dir: dir).live.path).query("SELECT COUNT(*) FROM meetings") { rows = $0.int(0) }
+        XCTAssertEqual(rows, 0, "a failed start must leave no (1,1) or live row")
+        // The connection is usable afterwards (the transaction was rolled back, not left open).
+        try sql("DROP TRIGGER no_project;")
+        let s = try await MeetingSession(store: store, title: "t", project: "taweed", app: nil, confidential: false, llm: llm(), now: { 1000 })
+        XCTAssertEqual(try pair(s.id), "0,1")
+    }
+
+    func testBrainLinkRules() {
+        func ok(_ s: String) -> Bool { BrainLink.isAllowed(URL(string: s)!) }
+        XCTAssertTrue(ok("http://100.64.0.0:8770"))
+        XCTAssertTrue(ok("http://100.127.255.255:8770"))
+        XCTAssertFalse(ok("http://100.63.255.255:8770"))
+        XCTAssertFalse(ok("http://100.128.0.0:8770"))
+        XCTAssertFalse(ok("http://100.64.0.1.evil.com:8770"))
+        XCTAssertTrue(ok("http://mini.tail1234.TS.NET:8770"))
+        XCTAssertFalse(ok("http://ts.net.evil.com"))
+        XCTAssertTrue(ok("http://localhost:8770"))
+        XCTAssertTrue(ok("http://127.0.0.1:9"))
+        XCTAssertTrue(ok("http://[::1]:8770"))
+        XCTAssertFalse(ok("http://192.168.1.10:8770"))
+        XCTAssertTrue(ok("https://brain.example.com"))
+        XCTAssertFalse(ok("ftp://100.64.0.1"))
+    }
+
+    func testHooksNeedScratchHome() throws {
+        XCTAssertNil(HamsaHome.testHome([:]))
+        XCTAssertNil(HamsaHome.testHome(["HAMSA_HOME": ""]))
+        XCTAssertNil(HamsaHome.testHome(["HAMSA_HOME": "~/Library/Application Support/Hamsa"]), "the real home is not a scratch home")
+        let home = try XCTUnwrap(HamsaHome.testHome(["HAMSA_HOME": dir.path]))
+        XCTAssertTrue(home.contains(dir.appendingPathComponent("probe.txt").path))
+        XCTAssertFalse(home.contains(dir.path + "Evil/probe.txt"))
+        XCTAssertFalse(home.contains(dir.appendingPathComponent("../probe.txt").path))
+        XCTAssertFalse(home.contains("/etc/probe.txt"))
     }
 
     func testPrepareOfflineAndCardCount() async throws {

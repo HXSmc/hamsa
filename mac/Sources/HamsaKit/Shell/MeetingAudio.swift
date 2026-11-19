@@ -51,10 +51,10 @@ public final class MeetingAudio: @unchecked Sendable {
         // Mic first: it makes this process an audio client, so the tap can exclude Hamsa's own output.
         do {
             let m = MicCapture()
-            try m.start(onBuffer: Self.sink(relays["me"]!, formats["me"]!))
+            do { try m.start(onBuffer: Self.sink(relays["me"]!, formats["me"]!)) } catch { throw AudioStartError.microphone(error) }
             mic = m
             let t = SystemTap()
-            try t.start(onBuffer: Self.sink(relays["them"]!, formats["them"]!))
+            do { try t.start(onBuffer: Self.sink(relays["them"]!, formats["them"]!)) } catch { throw AudioStartError.systemAudio(error) }
             tap = t
         } catch {
             await stop()

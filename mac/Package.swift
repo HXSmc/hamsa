@@ -4,6 +4,17 @@ import PackageDescription
 
 let benches = ["bench-wer", "bench-llm", "bench-match", "bench-latency", "bench-soak", "bench-report", "bench-label"]
 
+// T13: the menu-bar app's code (App/Sources, Overlay, Shell); App/build-app.sh wraps the binary into Hamsa.app.
+// AppKit/SwiftUI only: the target does not exist on Linux, so CI's `swift build` skips it.
+#if os(macOS)
+let appTargets: [Target] = [
+    .executableTarget(name: "HamsaApp", dependencies: ["HamsaKit"], path: "App",
+                      exclude: ["project.yml", "build-app.sh", "Hamsa.entitlements"]),
+]
+#else
+let appTargets: [Target] = []
+#endif
+
 let package = Package(
     name: "Hamsa",
     platforms: [.macOS(.v14)],
@@ -32,11 +43,8 @@ let package = Package(
             name: "hamsa-cli",
             dependencies: ["HamsaKit", .product(name: "ArgumentParser", package: "swift-argument-parser")]
         ),
-        // T13: the menu-bar app's code (App/Sources, Overlay, Shell); App/build-app.sh wraps the binary into Hamsa.app.
-        .executableTarget(name: "HamsaApp", dependencies: ["HamsaKit"], path: "App",
-                          exclude: ["project.yml", "build-app.sh"]),
         .testTarget(name: "HamsaKitTests", dependencies: ["HamsaKit"]),
-    ] + benches.map {
+    ] + appTargets + benches.map {
         .executableTarget(
             name: $0,
             dependencies: ["HamsaKit", "HamsaBench", .product(name: "ArgumentParser", package: "swift-argument-parser")]

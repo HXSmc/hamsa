@@ -11,11 +11,11 @@ struct MenuBarView: View {
             if let s = app.lastStop { Notice(icon: "checkmark.circle", text: s) }
             if let e = app.error { Notice(icon: "exclamationmark.triangle.fill", text: e, tint: .red) }
 
-            Toggle("Confidential", isOn: Binding(get: { app.confidential },
-                                                  set: { on in Task { await app.setConfidentialLive(on) } }))
+            Toggle("Confidential", isOn: app.confidentialBinding)
                 .toggleStyle(.switch)
+                .disabled(app.stopping)
                 .accessibilityHint("When on, no question is sent to AI providers and no summary is made.")
-            Text(app.confidential ? "AI answers off. Cards and notes only. No summary." : "AI answers on for questions your cards miss.")
+            Text(app.confidentialText)
                 .font(.callout).fixedSize(horizontal: false, vertical: true)
 
             Divider()

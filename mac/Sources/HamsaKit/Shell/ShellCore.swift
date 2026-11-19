@@ -14,6 +14,48 @@ public struct HamsaHome: Sendable {
     public var cards: URL { dir.appendingPathComponent("cards.sqlite") }
     public var index: URL { dir.appendingPathComponent("index.sqlite") }
     public var settingsFile: URL { dir.appendingPathComponent("settings.json") }
+
+    /// Test launch hooks run only against a scratch home: HAMSA_HOME set and not the real one.
+    public static func testHome(_ env: [String: String] = ProcessInfo.processInfo.environment) -> HamsaHome? {
+        guard let h = env["HAMSA_HOME"], !h.isEmpty else { return nil }
+        let home = current(env)
+        return home.dir.resolvingSymlinksInPath().standardized == current([:]).dir.resolvingSymlinksInPath().standardized ? nil : home
+    }
+
+    /// `path` lies inside this home (symlinks and `..` resolved; `/x/homeEvil` is not inside `/x/home`).
+    public func contains(_ path: String) -> Bool {
+        let root = dir.resolvingSymlinksInPath().standardized.path
+        let file = URL(fileURLWithPath: path).deletingLastPathComponent().resolvingSymlinksInPath().standardized
+            .appendingPathComponent(URL(fileURLWithPath: path).lastPathComponent).path
+        return file.hasPrefix(root + "/")
+    }
+}
+
+/// Which capture failed at Start, so the app can route to the right permission help without matching error text.
+public enum AudioStartError: Error {
+    case microphone(Error)
+    case systemAudio(Error)
+}
+
+/// Brain address rules: the token travels as a Bearer header, so plain http only where the link is already
+/// private (Tailscale 100.64.0.0/10, *.ts.net, this Mac); https everywhere else.
+public enum BrainLink {
+    public static func isAllowed(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]")), !host.isEmpty else { return false }
+        switch url.scheme?.lowercased() {
+        case "https": return true
+        case "http": return ["localhost", "127.0.0.1", "::1"].contains(host) || host.hasSuffix(".ts.net") || isTailscaleIPv4(host)
+        default: return false
+        }
+    }
+
+    /// Exactly four decimal octets, first 100, second 64...127.
+    static func isTailscaleIPv4(_ host: String) -> Bool {
+        let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 4 else { return false }
+        let n = parts.compactMap { $0.count <= 3 && $0.allSatisfy(\.isNumber) ? Int($0) : nil }
+        return n.count == 4 && n.allSatisfy { $0 <= 255 } && n[0] == 100 && (64...127).contains(n[1])
+    }
 }
 
 /// Non-secret app settings (no keys or tokens: those live in the Keychain only).
@@ -21,6 +63,8 @@ public struct ShellSettings: Codable, Equatable, Sendable {
     public var onboardingDone = false
     public var brainURL = ""
     public var project = "taweed"
+    /// The brain address the Keychain token was saved for (optional: older settings files have no such key).
+    public var brainTokenFor: String?
     public init() {}
 
     public static func load(_ home: HamsaHome) -> ShellSettings {
@@ -59,7 +103,10 @@ public enum ShellKeychain {
     @discardableResult
     public static func save(service: String, account: String, secret: String) -> Bool {
         guard isPlainToken(secret) else { return false }
+        // `security -i` exit status on a failed inner command is unverified, so confirm the item is there.
+        // shortcut: on a replace this proves an item exists, not that it is the new one; SecItem API once signed.
         return run(["-i"], stdin: "add-generic-password -U -s \(service) -a \(account) -w \(secret)\n").status == 0
+            && has(service: service, account: account)
     }
 
     static func run(_ args: [String], stdin: String?) -> (status: Int32, out: String) {
@@ -115,8 +162,10 @@ public enum Prepare {
         } catch {
             return offline(home, "brain unreachable", now)
         }
+        let n = cardCount(home.cards)
+        if n == 0 { return offline(home, "the brain has no cards yet", now) }  // 404s: nothing built, not "Ready"
         let index = age(home.index, now: now).map { ", index \($0)" } ?? ""
-        return "Ready: \(cardCount(home.cards)) cards\(index)"
+        return "Ready: \(n) cards\(index)"
     }
 
     static func offline(_ home: HamsaHome, _ why: String, _ now: Date) -> String {
@@ -126,12 +175,26 @@ public enum Prepare {
 }
 
 extension LiveStore {
+    /// Opens the row in one transaction: confidential flag (via startMeeting), project, and for a confidential
+    /// meeting `claude_allowed = 0`. Any failure rolls back: no half-written (confidential=1, claude_allowed=1) row.
+    public func openMeeting(id: String, title: String, app: String?, project: String, confidential: Bool) throws {
+        try db.exec("BEGIN IMMEDIATE")
+        do {
+            try startMeeting(id: id, title: title, app: app, confidential: confidential, notesConsent: false)
+            try db.query("UPDATE meetings SET project_id = ?, claude_allowed = ? WHERE id = ?", [project, !confidential, id]) { _ in }
+            try db.exec("COMMIT")
+        } catch {
+            try? db.exec("ROLLBACK")
+            throw error
+        }
+    }
+    /// End state of a meeting that was ever confidential: (confidential=1, claude_allowed=0), one statement.
+    public func markLocalOnly(meeting: String) throws {
+        try db.query("UPDATE meetings SET confidential = 1, claude_allowed = 0 WHERE id = ?", [meeting]) { _ in }
+    }
     /// `claude_allowed = 0`: the brain must not send this meeting to Claude (summary skipped). One way only.
     public func disallowClaude(meeting: String) throws {
         try db.query("UPDATE meetings SET claude_allowed = 0 WHERE id = ?", [meeting]) { _ in }
-    }
-    public func setProject(meeting: String, _ project: String) throws {
-        try db.query("UPDATE meetings SET project_id = ? WHERE id = ?", [project, meeting]) { _ in }
     }
     public func claudeAllowed(meeting: String) throws -> Bool {
         var out = false

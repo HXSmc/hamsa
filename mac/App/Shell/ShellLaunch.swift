@@ -16,7 +16,22 @@ enum ShellLaunch {
         args.firstIndex(of: flag).flatMap { args.indices.contains($0 + 1) ? args[$0 + 1] : nil }
     }
 
+    static let hooks = ["--snapshot", "--show", "--status-probe", "--step", "--prepare", "--replay"]
+
     static func run(_ args: [String], _ app: AppState) async {
+        if args.contains(where: hooks.contains) {
+            // Test hooks write meetings, files and make live calls: only against a scratch HAMSA_HOME.
+            guard let home = HamsaHome.testHome() else {
+                FileHandle.standardError.write(Data("Hamsa: test launch arguments need HAMSA_HOME set to a scratch folder. Refused.\n".utf8))
+                NSApp.terminate(nil)
+                return
+            }
+            if let out = value(args, "--status-probe"), !home.contains(out) {
+                FileHandle.standardError.write(Data("Hamsa: --status-probe must write inside HAMSA_HOME. Refused.\n".utf8))
+                NSApp.terminate(nil)
+                return
+            }
+        }
         if let dir = value(args, "--snapshot") {
             await Snapshot.renderAll(app, to: URL(fileURLWithPath: dir))
             NSApp.terminate(nil)
@@ -33,7 +48,7 @@ enum ShellLaunch {
         if let w = value(args, "--show").flatMap(ShellWindows.Kind.init(rawValue:)) { app.windows.show(w, app) }
         else if !app.settings.onboardingDone && value(args, "--replay") == nil { app.windows.show(.onboarding, app) }
         if let wav = value(args, "--replay") {
-            app.confidential = args.contains("--confidential")
+            await app.setConfidential(args.contains("--confidential"))
             await app.start(replay: URL(fileURLWithPath: wav))
             let secs = value(args, "--seconds").flatMap(Double.init) ?? 30
             try? await Task.sleep(for: .seconds(secs))
@@ -84,11 +99,11 @@ enum Snapshot {
         // Display states of the menu (set directly; the live run proves the transitions).
         app.recording = true; app.status = "Recording"
         await shot("menu-recording", MenuBarView())
-        app.confidential = true; app.status = "Recording · Confidential: AI answers off"
+        await app.setConfidential(true); app.status = "Recording · Confidential: AI answers off"
         await shot("menu-recording-confidential", MenuBarView())
         app.recording = false; app.status = "Stopped"; app.lastStop = "Saved on this Mac. Summary skipped (confidential)."
         await shot("menu-stopped-confidential", MenuBarView())
-        app.lastStop = nil; app.confidential = false
+        app.lastStop = nil; await app.setConfidential(false)
         app.error = "Could not start: microphone permission denied (System Settings > Privacy > Microphone)"
         await shot("menu-start-error", MenuBarView())
         app.error = nil
