@@ -118,6 +118,7 @@ final class AppState: ObservableObject {
         do {
             try FileManager.default.createDirectory(at: home.dir, withIntermediateDirectories: true)
             let store = try LiveStore(path: home.live.path)
+            try await store.repairCrashedConfidential()  // before this meeting's row exists: no live row to disturb
             let embedder: (any Embedder)? = try? await E5Embedder.load()
             let project = settings.project
             let index = Self.nonEmpty(home.index) ? try? LocalIndex(path: home.index.path, projectID: project) : nil

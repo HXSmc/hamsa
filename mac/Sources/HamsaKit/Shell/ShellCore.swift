@@ -197,6 +197,12 @@ extension LiveStore {
     public func disallowClaude(meeting: String) throws {
         try db.query("UPDATE meetings SET claude_allowed = 0 WHERE id = ?", [meeting]) { _ in }
     }
+    /// Crash repair: an ON->OFF flip stores (0,0) until Stop re-asserts (1,0), so a (0,0) row left by a crash would be
+    /// summarised. Run once when the app opens the store, before this process starts a meeting: every row qualifies.
+    /// Never call it while a meeting is live (the pipeline re-reads `confidential` before each send).
+    public func repairCrashedConfidential() throws {
+        try db.query("UPDATE meetings SET confidential = 1 WHERE claude_allowed = 0 AND confidential = 0", []) { _ in }
+    }
     public func claudeAllowed(meeting: String) throws -> Bool {
         var out = false
         try db.query("SELECT claude_allowed FROM meetings WHERE id = ?", [meeting]) { out = $0.int(0) != 0 }

@@ -96,6 +96,18 @@ final class ShellTests: XCTestCase {
         XCTAssertEqual(try pair(s.id), "1,0", "Stop re-asserts the pair for a meeting that was ever ON")
     }
 
+    func testRepairCrashedConfidentialFlipsOnlyTheZeroZeroRow() async throws {
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let store = try LiveStore(path: HamsaHome(dir: dir).live.path)
+        try await store.startMeeting(id: "crashed", confidential: false, notesConsent: false)
+        try await store.disallowClaude(meeting: "crashed")
+        try await store.startMeeting(id: "normal", confidential: false, notesConsent: false)
+        XCTAssertEqual(try pair("crashed"), "0,0")
+        try await store.repairCrashedConfidential()
+        XCTAssertEqual(try pair("crashed"), "1,0")
+        XCTAssertEqual(try pair("normal"), "0,1")
+    }
+
     func testFailedStartLeavesNoRow() async throws {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let store = try LiveStore(path: HamsaHome(dir: dir).live.path)
