@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import ArgumentParser
+import HamsaKit
 import Foundation
 
 /// T04b: spike - show a floating panel that must NOT appear in screen shares (sharingType = .none).

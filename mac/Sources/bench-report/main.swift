@@ -1,4 +1,10 @@
+import ArgumentParser
 import HamsaBench
 
-// Owner task: see docs/kickoff/07-engineering-plan.md.
-print(HamsaBench.banner("bench-report"))
+/// Owned by T01. Each later task adds its subcommand in its own file and one line here.
+struct BenchReport: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "bench-report", abstract: HamsaBench.banner("bench-report"), subcommands: [Latency.self])
+}
+
+BenchReport.main()
