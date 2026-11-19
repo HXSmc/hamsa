@@ -10,8 +10,14 @@ final class PipelineTests: XCTestCase {
     struct FixedEmbedder: Embedder { let v: [Float]; func embed(prefixed text: String) throws -> [Float] { v } }
 
     override func setUp() { Fake.reset() }
+    private var made: [String] = []
+    override func tearDown() {
+        for p in made { for f in [p, p + "-wal", p + "-shm"] { try? FileManager.default.removeItem(atPath: f) } }
+        made = []
+    }
 
-    func tmp() -> String { FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sqlite").path }
+    func track(_ p: String) -> String { made.append(p); return p }
+    func tmp() -> String { track(FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sqlite").path) }
     var session: URLSession {
         let cfg = URLSessionConfiguration.ephemeral
         cfg.protocolClasses = [Fake.self]
@@ -97,7 +103,7 @@ final class PipelineTests: XCTestCase {
 
     func testAnswerEventsRowsFollowSchema() async throws {
         let path = tmp()
-        let idx = try LocalIndex(path: LocalIndexTests().makeIndex(), projectID: "taweed", dim: 4)
+        let idx = try LocalIndex(path: track(LocalIndexTests().makeIndex()), projectID: "taweed", dim: 4)
         let chain = AnswerLLM(providers: PipelineProviders.chain { _ in "k" }, session: session)
         let p = try await pipeline(path, llm: chain, embedder: FixedEmbedder(v: [1, 0, 0, 0]), index: idx)
         await p.ingest(final("Which GPU do you run inference on?", at: 4000))
@@ -125,7 +131,7 @@ final class PipelineTests: XCTestCase {
 
     func testCardOnPartialWithoutQuestionWord() async throws {
         let path = tmp()
-        let cards = try CardMatcher(path: CardMatcherTests().makeCards(), projectID: "taweed", dim: 3)
+        let cards = try CardMatcher(path: track(CardMatcherTests().makeCards()), projectID: "taweed", dim: 3)
         let p = try await pipeline(path, llm: llm("up.test"), embedder: FixedEmbedder(v: [1, 0, 0]), cards: cards)
         await p.ingest(STTUpdate(channel: "them", text: "the GPU you use", startMs: 0, endMs: 900, isFinal: false, lang: "en", arrivalMs: 950))
         await p.finish()
