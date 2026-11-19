@@ -4,3 +4,4 @@ generated-images/
 __pycache__/
 *.sqlite
 .DS_Store
+.orchestrator/
