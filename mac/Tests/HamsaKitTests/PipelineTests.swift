@@ -257,6 +257,31 @@ final class PipelineTests: XCTestCase {
         XCTAssertEqual(skipped, 1)
     }
 
+    /// OFF then ON quickly: the OFF write lands after ON (stored row ends at 0); the latch must stay on.
+    func testLateOffWriteDoesNotClearNewerOnLatch() async throws {
+        let path = tmp()
+        let p = try await pipeline(path, confidential: true, llm: llm("up.test"))
+        let (entered, enteredC) = AsyncStream<Void>.makeStream()
+        let (gate, gateC) = AsyncStream<Void>.makeStream()
+        await p.setPrivacyWriteHook { on in
+            guard !on else { return }
+            enteredC.yield()
+            for await _ in gate { break }
+        }
+        let off = Task { try await p.setConfidential(false) }
+        for await _ in entered { break }  // OFF is suspended before its write
+        try await p.setConfidential(true)
+        gateC.yield()
+        try await off.value
+        let latched = await p.latched
+        XCTAssertTrue(latched, "a stale OFF cleared the newer ON")
+        let stored = try await LiveStore(path: path).privacy(meeting: "m1").confidential
+        XCTAssertFalse(stored, "test setup: the late OFF write should be the stored value")
+        await p.ingest(final("What is the monthly price?"))
+        await p.finish()
+        XCTAssertEqual(Fake.count(), 0, "a request left after the owner's last switch was ON")
+    }
+
     /// The overlay hook gets every event; an answer it did not display is not stamped and writes no row.
     func testShownFalseWritesNoRowAndPrivacyIsPublished() async throws {
         let path = tmp()

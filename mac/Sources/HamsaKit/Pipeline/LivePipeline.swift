@@ -66,6 +66,12 @@ public actor LivePipeline {
     private var lastSentMs: Int?
     /// The owner's switch in memory: wins over the stored row (a failed or not-yet-committed write must not send).
     private var confidentialLatch = false
+    /// One per setConfidential call: an OFF whose write lands after a newer ON must not clear the latch.
+    private var privGen = 0
+    /// Tests: awaited right before setConfidential's store write (suspends an OFF to race an ON).
+    var privacyWriteHook: (@Sendable (Bool) async -> Void)?
+    func setPrivacyWriteHook(_ h: (@Sendable (Bool) async -> Void)?) { privacyWriteHook = h }
+    var latched: Bool { confidentialLatch }
     private var cancelWaits: [Task<Void, Never>] = []  // one per in-flight cancel; awaited by finish()
 
     /// `minGapMs` nil = the chain's own pacing (`PipelineProviders.minGapMs`).
@@ -124,9 +130,12 @@ public actor LivePipeline {
     /// ON latches and cancels before any await, so neither a throwing nor a slow store write can let a request out.
     /// OFF clears the latch only after the write landed (a failed OFF stays closed).
     public func setConfidential(_ on: Bool) async throws {
+        privGen += 1
+        let g = privGen
         if on { confidentialLatch = true; cancelT2() }
+        await privacyWriteHook?(on)
         do { try await store.setConfidential(meeting: meeting, on) } catch { await publish(.privacy(confidential: confidentialLatch)); throw error }
-        if !on { confidentialLatch = false }
+        if !on, g == privGen { confidentialLatch = false }
         await publish(.privacy(confidential: confidentialLatch))
     }
 
