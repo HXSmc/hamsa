@@ -238,6 +238,63 @@ final class PipelineTests: XCTestCase {
         XCTAssertEqual(Fake.count(), 1, "no request after the switch")
     }
 
+    /// Hub add-on: a store write that throws must still tear down the answer in flight (cancel comes first).
+    func testConfidentialSwitchCancelsEvenWhenStoreWriteFails() async throws {
+        let path = tmp()
+        let p = try await pipeline(path, llm: llm("hang.test"))
+        await p.ingest(final("What is the monthly price?"))
+        await waitFor { Fake.count("hang.test") == 1 }
+        try SQLiteDB(path: path, readOnly: false)
+            .exec("CREATE TRIGGER no_update BEFORE UPDATE ON meetings BEGIN SELECT RAISE(ABORT, 'disk gone'); END;")
+        do { try await p.setConfidential(true); XCTFail("store write should have thrown") } catch {}
+        await waitFor { Fake.stoppedCount() >= 1 }
+        XCTAssertGreaterThanOrEqual(Fake.stoppedCount(), 1, "answer still streaming after a failed confidential write")
+        await p.finish()
+        XCTAssertEqual(Fake.count(), 1, "the cancel caused a new request")
+    }
+
+    /// T12: t_shown_ms is taken after the overlay's `shown` hook returns (T1 and the first T2 token).
+    func testShownHookSetsTShown() async throws {
+        let path = tmp()
+        let idx = try LocalIndex(path: track(LocalIndexTests().makeIndex()), projectID: "taweed", dim: 4)
+        let store = try LiveStore(path: path)
+        try await store.startMeeting(id: "m1")
+        let hooked = Counter()
+        let p = LivePipeline(store: store, meeting: "m1", embedder: FixedEmbedder(v: [1, 0, 0, 0]), index: idx, cards: nil,
+                             llm: llm("up.test"), minGapMs: 0,
+                             shown: { _ in hooked.add(); try? await Task.sleep(for: .milliseconds(60)) }, now: now)
+        let before = now()
+        await p.ingest(final("Which GPU do you run inference on?", at: 4000))
+        await p.finish()
+        XCTAssertEqual(hooked.value, 2)  // T1 + first T2 token, not every token
+        var shown: [String: Int] = [:]
+        try SQLiteDB(path: path).query("SELECT tier, t_shown_ms FROM answer_events") { shown[$0.text(0)] = $0.int(1) }
+        XCTAssertGreaterThanOrEqual(shown["T1"] ?? 0, before + 60)
+        XCTAssertGreaterThanOrEqual(shown["T2"] ?? 0, (shown["T1"] ?? 0) + 60)
+    }
+
+    /// 03-tdd: first_text_ms is negative when the text shows before the question ends; the view keeps the sign.
+    func testLatencyViewKeepsNegativeValues() async throws {
+        let path = tmp()
+        let idx = try LocalIndex(path: track(LocalIndexTests().makeIndex()), projectID: "taweed", dim: 4)
+        let p = try await pipeline(path, llm: nil, embedder: FixedEmbedder(v: [1, 0, 0, 0]), index: idx)
+        let end = now() + 600_000  // the question ends long after T1 shows on the partial
+        await p.ingest(STTUpdate(channel: "them", text: "can you explain which GPU", startMs: 0, endMs: 900, isFinal: false, lang: "en", arrivalMs: 950))
+        await p.ingest(STTUpdate(channel: "them", text: "can you explain which GPU you run", startMs: 0, endMs: end, isFinal: true, lang: "en", arrivalMs: end))
+        await p.finish()
+        var first: [Int] = []
+        try SQLiteDB(path: path).query("SELECT first_text_ms FROM latency_events WHERE tier = 'T1'") { first.append($0.int(0)) }
+        XCTAssertEqual(first.count, 1)
+        XCTAssertLessThan(first.first ?? 0, -500_000)
+    }
+
+    final class Counter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var n = 0
+        var value: Int { lock.withLock { n } }
+        func add() { lock.withLock { n += 1 } }
+    }
+
     func testMissingMeetingRowFailsClosed() async throws {
         let store = try LiveStore(path: tmp())  // no startMeeting: no row for "ghost"
         let chain = AnswerLLM(providers: PipelineProviders.chain { _ in "k" }, session: session)

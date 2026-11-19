@@ -32,7 +32,7 @@ public actor LiveStore {
     CREATE INDEX IF NOT EXISTS answer_events_question ON answer_events(question_id);
     DROP VIEW IF EXISTS latency_events;
     CREATE VIEW latency_events AS
-      SELECT q.id, a.tier, MAX(0, a.t_shown_ms - q.t_question_end_ms) AS first_text_ms FROM questions q
+      SELECT q.id, a.tier, a.t_shown_ms - q.t_question_end_ms AS first_text_ms FROM questions q
       JOIN answer_events a ON a.question_id = q.id
       WHERE a.id = (SELECT MIN(id) FROM answer_events WHERE question_id = q.id AND tier = a.tier);
     """

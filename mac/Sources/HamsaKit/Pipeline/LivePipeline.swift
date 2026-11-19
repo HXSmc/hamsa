@@ -13,6 +13,8 @@ import Foundation
 /// (after any gap wait). `setConfidential(true)` also cancels the answer in flight.
 /// All `*_ms` values use `now()`, the same clock as STTUpdate times (stream clock = audio timeline on a live feed),
 /// so `latency_events` (t_shown_ms - t_question_end_ms) is meaningful.
+/// `shown` (T12 overlay): awaited with each T0/T1 event and the first T2 token before `t_shown_ms` is taken, so the
+/// stored time is when the overlay committed the text to its window. nil = the time the event is emitted.
 public actor LivePipeline {
     public enum Event: Sendable {
         case question(id: Int, channel: String, text: String)
@@ -34,6 +36,7 @@ public actor LivePipeline {
         public var storeErrors = 0
     }
 
+    public typealias Shown = @Sendable (Event) async -> Void
     public nonisolated let events: AsyncStream<Event>
     private let cont: AsyncStream<Event>.Continuation
     let store: LiveStore
@@ -44,6 +47,7 @@ public actor LivePipeline {
     let llm: AnswerLLM?
     let askers: Set<String>
     let now: @Sendable () -> Int
+    let shown: Shown?
     let minGapMs: Int
     public private(set) var stats = Stats()
 
@@ -57,9 +61,9 @@ public actor LivePipeline {
 
     /// `minGapMs` nil = the chain's own pacing (`PipelineProviders.minGapMs`).
     public init(store: LiveStore, meeting: String, embedder: (any Embedder)?, index: LocalIndex?, cards: CardMatcher?,
-                llm: AnswerLLM?, askers: Set<String> = ["them"], minGapMs: Int? = nil, now: @escaping @Sendable () -> Int) {
+                llm: AnswerLLM?, askers: Set<String> = ["them"], minGapMs: Int? = nil, shown: Shown? = nil, now: @escaping @Sendable () -> Int) {
         self.store = store; self.meeting = meeting; self.embedder = embedder; self.index = index; self.cards = cards
-        self.llm = llm; self.askers = askers; self.now = now
+        self.llm = llm; self.askers = askers; self.now = now; self.shown = shown
         self.minGapMs = minGapMs ?? PipelineProviders.minGapMs(llm?.providers ?? [])
         // Newest-only buffer: a run without a consumer (CLI soak) must not grow memory.
         (events, cont) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(256))
@@ -108,9 +112,10 @@ public actor LivePipeline {
     }
 
     /// Owner flips the meeting's confidential switch: stored first, then an answer in flight is cancelled.
+    /// Cancel first: a store write that throws must never leave an answer streaming.
     public func setConfidential(_ on: Bool) async throws {
-        try await store.setConfidential(meeting: meeting, on)
         if on { cancelT2() }
+        try await store.setConfidential(meeting: meeting, on)
     }
 
     /// End of meeting: lets the answer in flight finish, waits for cancel measurements, closes `events`.
@@ -143,8 +148,10 @@ public actor LivePipeline {
 
     private func show(_ qid: Int, _ tier: String, _ text: String, _ provider: String?, at: Int? = nil) async {
         guard qid >= 0 else { return }
-        let ms = at ?? now()
-        cont.yield(.answer(questionID: qid, tier: tier, text: text, provider: provider, done: true))
+        let e = Event.answer(questionID: qid, tier: tier, text: text, provider: provider, done: true)
+        cont.yield(e)
+        let ms: Int
+        if let at { ms = at } else { await shown?(e); ms = now() }
         switch tier { case "T0": stats.t0 += 1; case "T1": stats.t1 += 1; default: stats.t2 += 1 }
         do { try await store.addAnswer(questionID: qid, tier: tier, tShownMs: ms, text: text, provider: provider) }
         catch { stats.storeErrors += 1 }
@@ -163,7 +170,7 @@ public actor LivePipeline {
         if priv.confidential { stats.t2Skipped["confidential", default: 0] += 1; return }
         let wait = lastSentMs.map { max(0, $0 + minGapMs - now()) } ?? 0
         let styleLines = style.filter { $0.ms >= now() - 180_000 }.map(\.text)
-        let (cont, now) = (cont, now)
+        let (cont, now, shown) = (cont, now, shown)
         let task = Task {
             if wait > 0 {
                 do { try await Task.sleep(for: .milliseconds(wait)) } catch { return }
@@ -173,10 +180,11 @@ public actor LivePipeline {
             do {
                 for try await (p, t) in llm.stream(question: question, snippets: snippets, styleLines: styleLines,
                                                    confidential: sendPriv.confidential, notesConsent: sendPriv.notesConsent) {
-                    if firstMs == nil { firstMs = now() }
                     text += t
                     provider = p
-                    cont.yield(.answer(questionID: qid, tier: "T2", text: text, provider: p, done: false))
+                    let e = Event.answer(questionID: qid, tier: "T2", text: text, provider: p, done: false)
+                    cont.yield(e)
+                    if firstMs == nil { await shown?(e); firstMs = now() }
                 }
             } catch {
                 err = String("\(error)".prefix(160))
