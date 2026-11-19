@@ -30,8 +30,9 @@ public actor LiveStore {
       tier TEXT CHECK(tier IN ('T0','T1','T2')), t_shown_ms INTEGER NOT NULL, text TEXT, provider TEXT,
       rating INTEGER CHECK(rating IN (-1,1)));
     CREATE INDEX IF NOT EXISTS answer_events_question ON answer_events(question_id);
-    CREATE VIEW IF NOT EXISTS latency_events AS
-      SELECT q.id, a.tier, a.t_shown_ms - q.t_question_end_ms AS first_text_ms FROM questions q
+    DROP VIEW IF EXISTS latency_events;
+    CREATE VIEW latency_events AS
+      SELECT q.id, a.tier, MAX(0, a.t_shown_ms - q.t_question_end_ms) AS first_text_ms FROM questions q
       JOIN answer_events a ON a.question_id = q.id
       WHERE a.id = (SELECT MIN(id) FROM answer_events WHERE question_id = q.id AND tier = a.tier);
     """
@@ -42,14 +43,14 @@ public actor LiveStore {
 
     public init(path: String) throws {
         db = try SQLiteDB(path: path, readOnly: false)
+        // Transcripts (confidential meetings too): owner-only, set before WAL so -wal/-shm inherit the mode.
+        if path != ":memory:" { try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path) }
         try db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
         try db.exec(Self.schema)
         // Schema 1 files (T08) have no notes_consent; CREATE TABLE IF NOT EXISTS does not add columns.
         var hasConsent = false
         try db.query("PRAGMA table_info(meetings)") { if $0.text(1) == "notes_consent" { hasConsent = true } }
-        if !hasConsent {
-            try db.exec("ALTER TABLE meetings ADD COLUMN notes_consent INTEGER NOT NULL DEFAULT 0; UPDATE schema_version SET version = 2;")
-        }
+        try db.exec("BEGIN; \(hasConsent ? "" : "ALTER TABLE meetings ADD COLUMN notes_consent INTEGER NOT NULL DEFAULT 0;") UPDATE schema_version SET version = 2 WHERE version < 2; COMMIT;")
     }
 
     /// `confidential`: no T2 request at all. `notesConsent`: owner OK for notes to reach providers that may
@@ -61,6 +62,11 @@ public actor LiveStore {
             INSERT INTO meetings (id, title, app, audio_dir, started_at, status, confidential, notes_consent)
             VALUES (?, ?, ?, ?, ?, 'live', ?, ?)
             """, [id, title as Any, app as Any, audioDir as Any, startedAt, confidential, notesConsent]) { _ in }
+    }
+
+    /// The owner's confidential switch (use LivePipeline.setConfidential during a call: it also cancels the answer in flight).
+    public func setConfidential(meeting: String, _ on: Bool) throws {
+        try db.query("UPDATE meetings SET confidential = ? WHERE id = ?", [on, meeting]) { _ in }
     }
 
     /// Stored privacy state of a meeting. Unknown meeting = confidential (fail closed).
@@ -100,6 +106,8 @@ public actor LiveStore {
         public let text: String
         public let tQuestionEndMs: Int
         public let tiers: [String]
+        /// Has a T2 answer that is not the "Not in your notes." refusal.
+        public let realT2: Bool
     }
 
     /// Questions of one meeting with the asker channel and the tiers shown for each.
@@ -107,11 +115,13 @@ public actor LiveStore {
         var out: [QuestionRow] = []
         try db.query("""
             SELECT q.id, COALESCE(s.channel, ''), q.text, q.t_question_end_ms,
-                   COALESCE((SELECT GROUP_CONCAT(tier) FROM answer_events a WHERE a.question_id = q.id), '')
+                   COALESCE((SELECT GROUP_CONCAT(tier) FROM answer_events a WHERE a.question_id = q.id), ''),
+                   EXISTS (SELECT 1 FROM answer_events a WHERE a.question_id = q.id AND a.tier = 'T2'
+                           AND a.text NOT LIKE '%Not in your notes%')
             FROM questions q LEFT JOIN segments s ON s.id = q.segment_id WHERE q.meeting_id = ? ORDER BY q.id
             """, [meeting]) {
             out.append(QuestionRow(id: $0.int(0), channel: $0.text(1), text: $0.text(2), tQuestionEndMs: $0.int(3),
-                                   tiers: $0.text(4).split(separator: ",").map(String.init)))
+                                   tiers: $0.text(4).split(separator: ",").map(String.init), realT2: $0.int(5) != 0))
         }
         return out
     }

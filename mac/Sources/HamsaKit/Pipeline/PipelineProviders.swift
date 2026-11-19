@@ -18,6 +18,15 @@ public enum PipelineProviders {
         ]
     }
 
+    /// Request pacing per host: the Groq free tier answers 429 when paced faster than ~1 call / 6 s (T03, T11 bench).
+    /// A paid key on another host needs no gap.
+    public static let minGapMsByHost: [String: Int] = ["api.groq.com": 6000]
+
+    /// Gap between T2 requests for a chain: the largest gap of any provider that has a key.
+    public static func minGapMs(_ providers: [LLMProvider]) -> Int {
+        providers.filter { !$0.apiKey.isEmpty }.map { minGapMsByHost[$0.baseURL.host ?? ""] ?? 0 }.max() ?? 0
+    }
+
     #if os(macOS)
     /// Keychain item (service `hamsa`, account = provider) via /usr/bin/security: items added with the
     /// `security` CLI trust only that tool, so a direct SecItem read from an unsigned binary would prompt.

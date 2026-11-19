@@ -87,7 +87,8 @@ struct Live: AsyncParsableCommand {
         let audioZero = StopFlag.Box()
         let pipeline = LivePipeline(store: store, meeting: meeting, embedder: embedder, index: idx, cards: cardMatcher,
                                     llm: llm, askers: askerSet, now: { let n = now(); return n - (audioZero.value ?? n) })
-        print("meeting=\(meeting) confidential=\(confidential) notes_consent=false askers=\(askerSet.sorted().joined(separator: ","))")
+        let priv = try await store.privacy(meeting: meeting)
+        print("meeting=\(meeting) confidential=\(priv.confidential) notes_consent=\(priv.notesConsent) askers=\(askerSet.sorted().joined(separator: ","))")
 
         // STT: one supervised worker per channel, fed through a relay.
         let stop = StopFlag()
@@ -131,7 +132,11 @@ struct Live: AsyncParsableCommand {
         } else {
             print("route=replay (no --audio-device)")
             var feeds: [(LiveRelay<PCMChunk>, [PCMChunk])] = []
-            for (i, ch) in channels.enumerated() { feeds.append((relays[ch]!, try LiveDictation.chunks(url: wavs[i], format: formats[ch]!))) }
+            for (i, ch) in channels.enumerated() {
+                let chunks = try LiveDictation.chunks(url: wavs[i], format: formats[ch]!)
+                guard !chunks.isEmpty else { throw ValidationError("\(wavs[i].lastPathComponent) has no audio") }
+                feeds.append((relays[ch]!, chunks))
+            }
             periodSec = Double(feeds.map(\.1.count).max() ?? 0) * 0.1
             let loop = loop
             for (relay, chunks) in feeds {
@@ -179,6 +184,7 @@ struct Live: AsyncParsableCommand {
         print("t2_starts=\(s.t2Starts) t2_replaced_pending=\(s.replacedPending) skipped=\(s.t2Skipped) store_errors=\(s.storeErrors)")
         for (e, n) in s.t2Errors.sorted(by: { $0.value > $1.value }) { print("t2_error x\(n): \(e)") }
         let cOK = s.cancelMs.filter { $0 <= 200 }.count
+        // NA = no answer was in flight when a newer question came: nothing measured, not a pass.
         print("cancel_ok=\(s.cancelMs.isEmpty ? "NA" : "\(cOK * 100 / s.cancelMs.count)%") (\(cOK)/\(s.cancelMs.count)) cancel_max_ms=\(s.cancelMs.max() ?? -1)")
 
         guard let labels, periodSec > 0 else { return }
@@ -197,16 +203,21 @@ struct Live: AsyncParsableCommand {
         for (name, set) in [("answer_coverage", labels.questions.filter(\.tech)),
                             ("answer_coverage_them", labels.questions.filter { $0.tech && $0.channel == "them" }),
                             ("all_questions_coverage", labels.questions)] {
-            var total = 0, covered = 0, t2 = 0
+            var total = 0, covered = 0, t2 = 0, real = 0
             for k in 0..<Int((Double(audioEndMs) / 1000 / periodSec).rounded(.up)) {
                 for q in set where window(q, k).upperBound <= audioEndMs {
                     total += 1
                     let r = rows(q, k)
                     if r.contains(where: { !$0.tiers.isEmpty }) { covered += 1 }
                     if r.contains(where: { $0.tiers.contains("T2") }) { t2 += 1 }
+                    if r.contains(where: \.realT2) { real += 1 }
                 }
             }
-            line.append("\(name)=\(total == 0 ? 0 : covered * 100 / total)% (\(covered)/\(total), with T2 \(t2))")
+            func pct(_ n: Int) -> Int { total == 0 ? 0 : n * 100 / total }
+            // any tier = a T0/T1/T2 row was shown (T1 is the top snippet whether or not it is relevant).
+            line.append("\(name)=\(pct(covered))% (any tier, \(covered)/\(total); with a T2 row \(t2))")
+            // T2 that is an actual answer, not the "Not in your notes." refusal.
+            line.append("t2_\(name)=\(pct(real))% (\(real)/\(total))")
         }
         line.forEach { print($0) }
         var labelled = Set<Int>()
@@ -253,7 +264,8 @@ final class DeviceIO: @unchecked Sendable {
         else { throw ValidationError("no input device matching \(match)") }
         id = dev.id; name = dev.name
         try Self.setDevice(capture.inputNode.audioUnit, id)
-        let f = capture.inputNode.outputFormat(forBus: 0)
+        // Hardware side: the node's output (client) format can still be the previous default device's (1 ch mic).
+        let f = capture.inputNode.inputFormat(forBus: 0)
         guard f.sampleRate > 0 else { throw ValidationError("device \(name) has no input format") }
         channels = min(f.channelCount, 2)
         channelFormat = AVAudioFormat(standardFormatWithSampleRate: f.sampleRate, channels: 1)!
@@ -303,7 +315,7 @@ final class DeviceIO: @unchecked Sendable {
     /// Splits the device input into mono channels, converts each to its analyzer format, pushes to its relay.
     func startCapture(relays: [LiveRelay<PCMChunk>], formats: [AVAudioFormat], first: @escaping @Sendable () -> Void) throws {
         let input = capture.inputNode
-        let inFormat = input.outputFormat(forBus: 0)
+        let inFormat = input.inputFormat(forBus: 0)  // tap in the device's own channel layout
         let mono = channelFormat
         let convs = try formats.map { f -> AVAudioConverter in
             guard let c = AVAudioConverter(from: mono, to: f) else { throw ValidationError("no converter to \(f)") }

@@ -4,12 +4,13 @@ import Foundation
 /// T11b: the live answer path (03-tdd "4 answer tiers"). Feed it every STT update of a meeting. It writes the
 /// segment, runs the question detector on the asker channels and shows, per question:
 /// - T0 card: on partials and finals when CardMatcher is confident (no question word needed),
-/// - T1 snippet: top LocalIndex hit, and T2: streamed LLM answer from the top-3 hits,
-///   fired on a final with rules score >= 1, or speculatively on a partial with rules score >= 2,
-///   restarted when the top-3 chunks change.
-/// A newer T2 cancels the one in flight. T2 requests are spaced >= `minGapMs` (Groq free tier 429s when
-/// paced faster than ~6 s); a question waiting for the gap is replaced by a newer one (newest question wins).
-/// `confidential` and `notes_consent` are read from the meeting row in LiveStore before every T2.
+/// - T1 snippet: top LocalIndex hit, early on a partial with rules score >= 2, else on the final,
+/// - T2: streamed LLM answer from the top-3 hits, once per question, on the final with rules score >= 1.
+/// A newer question's T2 cancels the one in flight (the cancelled answer writes no answer_events row).
+/// T2 requests are spaced >= `minGapMs` (from the provider chain, PipelineProviders.minGapMs); a question waiting
+/// for the gap is replaced by a newer one (newest question wins).
+/// `confidential` and `notes_consent` are read from the meeting row in LiveStore right before each request is sent
+/// (after any gap wait). `setConfidential(true)` also cancels the answer in flight.
 /// All `*_ms` values use `now()`, the same clock as STTUpdate times (stream clock = audio timeline on a live feed),
 /// so `latency_events` (t_shown_ms - t_question_end_ms) is meaningful.
 public actor LivePipeline {
@@ -21,9 +22,9 @@ public actor LivePipeline {
 
     public struct Stats: Sendable {
         public var questions = 0, t0 = 0, t1 = 0, t2 = 0
-        /// T2 streams handed to AnswerLLM (after the gap gate).
+        /// T2 streams handed to AnswerLLM (after the gap gate and the send-time privacy check).
         public var t2Starts = 0
-        /// T2 not started, by reason (`confidential`, `no llm`).
+        /// T2 not sent, by reason (`confidential`, `no llm`).
         public var t2Skipped: [String: Int] = [:]
         public var t2Errors: [String: Int] = [:]
         /// Answers still waiting for the gap when a newer question replaced them (no request was sent).
@@ -46,17 +47,20 @@ public actor LivePipeline {
     let minGapMs: Int
     public private(set) var stats = Stats()
 
-    struct Utterance { var words = 0; var questionID: Int?; var cardID: Int?; var chunkIDs: [Int]?; var t1Shown = false }
+    struct Utterance { var channel: String; var words = 0; var questionID: Int?; var cardID: Int?; var t1Shown = false }
     private var open: [Int: Utterance] = [:]  // by segment row id
     private var style: [(ms: Int, text: String)] = []
-    private var t2: (token: Int, task: Task<Void, Never>, sent: Bool)?
+    private var t2: (token: Int, task: Task<Void, Never>, sent: Bool, questionID: Int)?
     private var token = 0
     private var lastSentMs: Int?
+    private var cancelWaits: [Task<Void, Never>] = []  // one per in-flight cancel; awaited by finish()
 
+    /// `minGapMs` nil = the chain's own pacing (`PipelineProviders.minGapMs`).
     public init(store: LiveStore, meeting: String, embedder: (any Embedder)?, index: LocalIndex?, cards: CardMatcher?,
-                llm: AnswerLLM?, askers: Set<String> = ["them"], minGapMs: Int = 6000, now: @escaping @Sendable () -> Int) {
+                llm: AnswerLLM?, askers: Set<String> = ["them"], minGapMs: Int? = nil, now: @escaping @Sendable () -> Int) {
         self.store = store; self.meeting = meeting; self.embedder = embedder; self.index = index; self.cards = cards
-        self.llm = llm; self.askers = askers; self.minGapMs = minGapMs; self.now = now
+        self.llm = llm; self.askers = askers; self.now = now
+        self.minGapMs = minGapMs ?? PipelineProviders.minGapMs(llm?.providers ?? [])
         // Newest-only buffer: a run without a consumer (CLI soak) must not grow memory.
         (events, cont) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(256))
     }
@@ -66,7 +70,10 @@ public actor LivePipeline {
         do { seg = try await store.write(u, meeting: meeting) } catch { stats.storeErrors += 1; return }
         if u.channel == "me", u.isFinal { noteStyle(u) }
         guard askers.contains(u.channel) else { return }
-        var ut = open[seg] ?? Utterance()
+        if open[seg] == nil {  // a new utterance: drop rows of this channel that never got a final (STT restart)
+            open = open.filter { $0.value.channel != u.channel }
+        }
+        var ut = open[seg] ?? Utterance(channel: u.channel)
         let words = u.text.split(whereSeparator: \.isWhitespace).count
         // A partial is re-checked only after it grew by >= 2 words (03-tdd).
         guard u.isFinal || words >= ut.words + 2 else { return }
@@ -89,9 +96,7 @@ public actor LivePipeline {
                 await show(qid, "T1", String("\(h.heading)\n\(h.text)".prefix(600)), nil)
                 ut.t1Shown = true
             }
-            let ids = hits.map(\.chunkID)
-            if ut.chunkIDs != ids {
-                ut.chunkIDs = ids
+            if u.isFinal {
                 await startT2(qid, question: u.text, snippets: hits.map { "\($0.heading)\n\($0.text)" })
             }
         }
@@ -102,11 +107,22 @@ public actor LivePipeline {
         open[seg] = u.isFinal ? nil : ut
     }
 
-    /// End of meeting: lets the answer in flight finish, then closes `events`.
+    /// Owner flips the meeting's confidential switch: stored first, then an answer in flight is cancelled.
+    public func setConfidential(_ on: Bool) async throws {
+        try await store.setConfidential(meeting: meeting, on)
+        if on { cancelT2() }
+    }
+
+    /// End of meeting: lets the answer in flight finish, waits for cancel measurements, closes `events`.
     public func finish() async {
         if let cur = t2 { await cur.task.value }
+        for w in cancelWaits { await w.value }
+        cancelWaits = []
         cont.finish()
     }
+
+    /// Question id of the answer in flight or waiting for the gap (tests).
+    var currentT2Question: Int? { t2?.questionID }
 
     // MARK: - tiers
 
@@ -134,15 +150,17 @@ public actor LivePipeline {
         catch { stats.storeErrors += 1 }
     }
 
-    private func startT2(_ qid: Int, question: String, snippets: [String]) async {
+    /// Internal (not private) so tests can drive it for a meeting that has no row.
+    func startT2(_ qid: Int, question: String, snippets: [String]) async {
         guard qid >= 0 else { return }
         guard let llm else { stats.t2Skipped["no llm", default: 0] += 1; return }
-        // Read before touching `t2`: no await between cancel and the new task, so two questions never interleave.
-        let priv = (try? await store.privacy(meeting: meeting)) ?? (confidential: true, notesConsent: false)
-        cancelT2()
-        if priv.confidential { stats.t2Skipped["confidential", default: 0] += 1; return }
+        // Token first: the actor is re-entrant, so a question that arrives during the await below must win.
         token += 1
         let tok = token
+        let priv = (try? await store.privacy(meeting: meeting)) ?? (confidential: true, notesConsent: false)
+        guard token == tok else { return }  // a newer question took over while we read
+        cancelT2()
+        if priv.confidential { stats.t2Skipped["confidential", default: 0] += 1; return }
         let wait = lastSentMs.map { max(0, $0 + minGapMs - now()) } ?? 0
         let styleLines = style.filter { $0.ms >= now() - 180_000 }.map(\.text)
         let (cont, now) = (cont, now)
@@ -150,11 +168,11 @@ public actor LivePipeline {
             if wait > 0 {
                 do { try await Task.sleep(for: .milliseconds(wait)) } catch { return }
             }
-            guard await self.claimSend(tok) else { return }
+            guard let sendPriv = await self.claimSend(tok) else { return }
             var text = "", provider: String?, firstMs: Int?, err: String?
             do {
                 for try await (p, t) in llm.stream(question: question, snippets: snippets, styleLines: styleLines,
-                                                   confidential: priv.confidential, notesConsent: priv.notesConsent) {
+                                                   confidential: sendPriv.confidential, notesConsent: sendPriv.notesConsent) {
                     if firstMs == nil { firstMs = now() }
                     text += t
                     provider = p
@@ -163,24 +181,34 @@ public actor LivePipeline {
             } catch {
                 err = String("\(error)".prefix(160))
             }
-            await self.t2Ended(tok, qid, firstMs, text, provider, err)
+            await self.t2Ended(tok, qid, firstMs, text, provider, err, cancelled: Task.isCancelled)
         }
-        t2 = (tok, task, false)
+        t2 = (tok, task, false, qid)
     }
 
-    private func claimSend(_ tok: Int) -> Bool {
-        guard t2?.token == tok, !Task.isCancelled else { return false }
+    /// Right before the request: still the current answer, and the stored meeting state (re-read after any gap
+    /// wait) still allows it. Returns the privacy state to send with, or nil = do not send.
+    private func claimSend(_ tok: Int) async -> (confidential: Bool, notesConsent: Bool)? {
+        guard t2?.token == tok, !Task.isCancelled else { return nil }
+        let priv = (try? await store.privacy(meeting: meeting)) ?? (confidential: true, notesConsent: false)
+        guard t2?.token == tok, !Task.isCancelled else { return nil }
+        if priv.confidential {
+            stats.t2Skipped["confidential", default: 0] += 1
+            t2 = nil
+            return nil
+        }
         t2?.sent = true
         lastSentMs = now()
         stats.t2Starts += 1
-        return true
+        return priv
     }
 
-    /// A cancelled stream ends normally with the text shown so far; that partial answer is logged too.
-    private func t2Ended(_ tok: Int, _ qid: Int, _ firstMs: Int?, _ text: String, _ provider: String?, _ err: String?) async {
+    /// A stream cancelled by a newer question (or the confidential switch) writes no row: it was replaced.
+    private func t2Ended(_ tok: Int, _ qid: Int, _ firstMs: Int?, _ text: String, _ provider: String?, _ err: String?,
+                         cancelled: Bool) async {
         if t2?.token == tok { t2 = nil }
-        if let err { stats.t2Errors[err, default: 0] += 1 }
-        if let firstMs, !text.isEmpty { await show(qid, "T2", text, provider, at: firstMs) }
+        if let err, !cancelled { stats.t2Errors[err, default: 0] += 1 }
+        if !cancelled, let firstMs, !text.isEmpty { await show(qid, "T2", text, provider, at: firstMs) }
     }
 
     private func cancelT2() {
@@ -189,11 +217,11 @@ public actor LivePipeline {
         cur.task.cancel()
         guard cur.sent else { stats.replacedPending += 1; return }
         let start = ContinuousClock.now
-        Task {
+        cancelWaits.append(Task {
             await cur.task.value
             let c = start.duration(to: .now).components
             await self.recordCancel(Int(c.seconds) * 1000 + Int(c.attoseconds / 1_000_000_000_000_000))
-        }
+        })
     }
 
     private func recordCancel(_ ms: Int) { stats.cancelMs.append(ms) }

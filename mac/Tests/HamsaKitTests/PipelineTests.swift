@@ -51,7 +51,8 @@ final class PipelineTests: XCTestCase {
     }
 
     func testNewQuestionCancelsInFlightAnswerWithin200ms() async throws {
-        let p = try await pipeline(tmp(), llm: llm("hang.test"))
+        let path = tmp()
+        let p = try await pipeline(path, llm: llm("hang.test"))
         await p.ingest(final("What is the monthly price?"))
         await waitFor { Fake.count("hang.test") == 1 }
         XCTAssertEqual(Fake.count("hang.test"), 1)
@@ -65,9 +66,13 @@ final class PipelineTests: XCTestCase {
         XCTAssertLessThanOrEqual(ms, 200, "cancel took \(ms) ms on the wire")
         await waitFor { Fake.count("hang.test") == 2 }
         XCTAssertEqual(Fake.count("hang.test"), 2)  // the new question got its own request
-        let cancels = await p.stats.cancelMs
+        var cancels: [Int] = []
+        for _ in 0..<100 where cancels.isEmpty { cancels = await p.stats.cancelMs; try await Task.sleep(for: .milliseconds(5)) }
         XCTAssertEqual(cancels.count, 1)
         XCTAssertLessThanOrEqual(cancels.first ?? 999, 200)
+        // The replaced answer (one token shown) leaves no answer_events row.
+        let rows = try await LiveStore(path: path).questions(meeting: "m1")
+        XCTAssertEqual(rows.first?.tiers, [])
     }
 
     func testConfidentialMeetingSendsNoRequest() async throws {
@@ -166,6 +171,90 @@ final class PipelineTests: XCTestCase {
         XCTAssertEqual(s.questions, 0)  // default askers = them (03-tdd)
     }
 
+    func testPartialShowsT1EarlyButT2OnlyOnFinal() async throws {
+        let path = tmp()
+        let idx = try LocalIndex(path: track(LocalIndexTests().makeIndex()), projectID: "taweed", dim: 4)
+        let p = try await pipeline(path, llm: llm("up.test"), embedder: FixedEmbedder(v: [1, 0, 0, 0]), index: idx)
+        await p.ingest(STTUpdate(channel: "them", text: "can you explain which GPU", startMs: 0, endMs: 900, isFinal: false, lang: "en", arrivalMs: 950))
+        var s = await p.stats
+        XCTAssertEqual(s.t1, 1)
+        XCTAssertEqual(s.t2Starts, 0)  // no speculative T2
+        await p.ingest(STTUpdate(channel: "them", text: "can you explain which GPU you run", startMs: 0, endMs: 1500, isFinal: true, lang: "en", arrivalMs: 1600))
+        await p.finish()
+        s = await p.stats
+        XCTAssertEqual(s.t1, 1)
+        XCTAssertEqual(s.t2, 1)
+        XCTAssertEqual(Fake.count("up.test"), 1)
+        let rows = try await LiveStore(path: path).questions(meeting: "m1")
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.tiers, ["T1", "T2"])
+    }
+
+    /// Two channels ask at once (re-entrant actor): the question created last must own the answer in flight.
+    func testInterleavedChannelsNewestQuestionWins() async throws {
+        for i in 0..<20 {
+            let path = tmp()
+            let store = try LiveStore(path: path)
+            try await store.startMeeting(id: "m1")
+            let p = LivePipeline(store: store, meeting: "m1", embedder: nil, index: nil, cards: nil, llm: llm("hang.test"),
+                                 askers: ["them", "me"], minGapMs: 0, now: now)
+            let (ua, ub) = (final("What is the monthly price?", at: 1000 + i, channel: "them"),
+                            final("How many engineers are on the team?", at: 1000 + i, channel: "me"))
+            async let a: Void = p.ingest(ua)
+            async let b: Void = p.ingest(ub)
+            _ = await (a, b)
+            let qs = try await store.questions(meeting: "m1")
+            XCTAssertEqual(qs.count, 2)
+            let current = await p.currentT2Question
+            XCTAssertEqual(current, qs.map(\.id).max(), "iteration \(i): older question won")
+            try await p.setConfidential(true)  // tears down the hanging request
+        }
+    }
+
+    func testPrivacyIsReReadAtSendTime() async throws {
+        let path = tmp()
+        let p = try await pipeline(path, llm: llm("up.test"), gap: 300)
+        await p.ingest(final("What is the monthly price?", at: 1000))
+        await waitFor { Fake.count("up.test") == 1 }
+        await p.ingest(final("How many engineers are there?", at: 2000))  // waits for the gap
+        try await LiveStore(path: path).setConfidential(meeting: "m1", true)  // flipped behind the pipeline's back
+        await p.finish()
+        XCTAssertEqual(Fake.count("up.test"), 1, "request sent after the meeting turned confidential")
+        let s = await p.stats
+        XCTAssertEqual(s.t2Skipped["confidential"], 1)
+    }
+
+    func testConfidentialSwitchCancelsAnswerInFlight() async throws {
+        let p = try await pipeline(tmp(), llm: llm("hang.test"))
+        await p.ingest(final("What is the monthly price?"))
+        await waitFor { Fake.count("hang.test") == 1 }
+        let t = ContinuousClock.now
+        try await p.setConfidential(true)
+        await waitFor { Fake.stoppedCount() >= 1 }
+        XCTAssertGreaterThanOrEqual(Fake.stoppedCount(), 1)
+        XCTAssertLessThanOrEqual(t.duration(to: .now), .milliseconds(200))
+        await p.ingest(final("How many engineers are there?", at: 5000))
+        await p.finish()
+        XCTAssertEqual(Fake.count(), 1, "no request after the switch")
+    }
+
+    func testMissingMeetingRowFailsClosed() async throws {
+        let store = try LiveStore(path: tmp())  // no startMeeting: no row for "ghost"
+        let chain = AnswerLLM(providers: PipelineProviders.chain { _ in "k" }, session: session)
+        let p = LivePipeline(store: store, meeting: "ghost", embedder: nil, index: nil, cards: nil, llm: chain, minGapMs: 0, now: now)
+        await p.startT2(1, question: "What is the monthly price?", snippets: ["s"])
+        await p.finish()
+        XCTAssertEqual(Fake.count(), 0)
+        let s = await p.stats
+        XCTAssertEqual(s.t2Skipped["confidential"], 1)
+    }
+
+    func testChainPacingComesFromProviders() {
+        XCTAssertEqual(PipelineProviders.minGapMs(PipelineProviders.chain { _ in "k" }), 6000)  // Groq free tier
+        XCTAssertEqual(PipelineProviders.minGapMs(PipelineProviders.chain { $0 == "gemini" ? "k" : nil }), 0)
+        XCTAssertEqual(PipelineProviders.minGapMs(llm("up.test").providers), 0)
+    }
+
     func testSchema1FileIsMigrated() async throws {
         let path = tmp()
         let old = try SQLiteDB(path: path, readOnly: false)
@@ -185,6 +274,8 @@ final class PipelineTests: XCTestCase {
         var v = 0
         try old.query("SELECT version FROM schema_version") { v = $0.int(0) }
         XCTAssertEqual(v, 2)
+        let mode = try FileManager.default.attributesOfItem(atPath: path)[.posixPermissions] as? Int
+        XCTAssertEqual(mode, 0o600)
     }
 }
 #endif
